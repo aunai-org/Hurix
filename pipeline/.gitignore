@@ -5,3 +5,4 @@ hima/
 frames/
 cache/
 track.json
+__pycache__/
