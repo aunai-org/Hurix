@@ -59,8 +59,8 @@
         <button type="button" data-mode="2" aria-pressed="false">3D storm</button>
       </div>
       <div class="seg" role="group" aria-label="Infrared colours">
-        <button type="button" data-pal="0" aria-pressed="false">Grey</button>
-        <button type="button" data-pal="1" aria-pressed="true">Enhanced</button>
+        <button type="button" data-pal="0" aria-pressed="false" title="Plain infrared: higher, colder cloud tops are brighter">Grey</button>
+        <button type="button" data-pal="1" aria-pressed="true" title="Colours the coldest tops (below about −40 °C), where the strongest thunderstorms are">Enhanced</button>
       </div>
       <div class="seg" role="group" aria-label="Lighting">
         <button type="button" data-light="0" aria-pressed="true">Studio</button>
@@ -70,7 +70,7 @@
       <div class="time" id="time">…</div>
       <label class="slider" id="exagwrap" for="exag">Height ×<span id="exagv">14</span><input id="exag" type="range" min="4" max="40" value="14"></label>
       <div class="seg" role="group" aria-label="Cutaway" id="cutwrap">
-        <button type="button" id="cut" aria-pressed="false">Cutaway</button>
+        <button type="button" id="cut" aria-pressed="false" title="Slice a quarter out of the 3D storm to see inside it, coloured by modelled wind speed">Cutaway</button>
       </div>
     </div>
 

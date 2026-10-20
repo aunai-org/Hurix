@@ -61,8 +61,8 @@ export const EARTH = {
       // sunset tint near the terminator
       col *= mix(vec3(1.0, 0.55, 0.3), vec3(1.0), smoothstep(0.0, 0.35, ndlS));
       vec3 H = normalize(L + V);
-      float spec = pow(max(dot(N, H), 0.0), 220.0) * 14.0 + pow(max(dot(N, H), 0.0), 18.0) * 0.18;
-      col += w * spec * 0.16 * vec3(1.0, 0.9, 0.75) * smoothstep(0.0, 0.1, ndlS) * (1.0 - shadow);
+      float spec = pow(max(dot(N, H), 0.0), 320.0) * 5.0 + pow(max(dot(N, H), 0.0), 24.0) * 0.08;
+      col += w * spec * 0.1 * vec3(1.0, 0.9, 0.75) * smoothstep(0.0, 0.1, ndlS) * (1.0 - shadow);
       // city lights on the night side, dimmed under cloud
       vec3 lights = pow(texture2D(night, vUv).rgb, vec3(1.6)) * vec3(1.0, 0.78, 0.5) * 7.0;
       float cl = cloudOf(btOf(texture2D(ir, vUv).r));
@@ -70,7 +70,7 @@ export const EARTH = {
       col += albedo * vec3(0.012, 0.018, 0.03);
       // aerial perspective toward the limb
       float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-      col = mix(col, vec3(0.22, 0.5, 1.0) * 0.9 * max(dayF, 0.04), fres * 0.4);
+      col = mix(col, vec3(0.22, 0.5, 1.0) * 0.6 * max(dayF, 0.04), fres * 0.28);
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -85,7 +85,7 @@ export const CLOUDS = {
     void main(){
       vec3 N = normalize(vN), V = normalize(cameraPosition - vP), L = normalize(sunDir);
       float bt = btOf(texture2D(ir, vUv).r);
-      float a = cloudOf(bt);
+      float a = pow(smoothstep(286.0, 232.0, bt), 1.15);
       float isLive = texture2D(live, vUv).r;
       // hide where the 3D patch takes over
       vec3 d = N - eye; float s = dot(d, east) / patchAng, tt = dot(d, north) / patchAng;
@@ -94,15 +94,17 @@ export const CLOUDS = {
       float ndl = dot(N, L);
       // studio light wraps softly; the real sun gives a sharp terminator (high tops catch light just past it)
       float lit = mix(smoothstep(-0.25, 0.6, ndl), smoothstep(-0.05, 0.3, ndl), realSun);
-      vec3 base = palette > 0.5 ? mix(vec3(0.92), enhance(bt), isLive) : vec3(0.92);
-      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.9 * mix(vec3(1.0, 0.5, 0.25), vec3(1.0), smoothstep(0.0, 0.4, ndl));
+      // grey: classic IR scale, low warm cloud dim and high cold tops bright; enhanced colours tops below about -40 C
+      vec3 grey = vec3(mix(0.42, 0.95, smoothstep(282.0, 210.0, bt)));
+      vec3 base = palette > 0.5 ? mix(grey, enhance(bt) * 0.9, isLive * smoothstep(236.0, 228.0, bt)) : grey;
+      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.3 * mix(vec3(1.0, 0.5, 0.25), vec3(1.0), smoothstep(0.0, 0.4, ndl));
       vec3 col = base * (sunCol * lit + vec3(0.10, 0.13, 0.18));
       // IR sees through the night: keep a cool moonlit read of the cloud tops
       col += base * vec3(0.30, 0.36, 0.48) * mix(1.0, 0.35, realSun) * (1.0 - lit) * a;
-      if (palette > 0.5) col += enhance(bt) * smoothstep(-40.0, -70.0, bt - 273.15) * 1.4 * isLive + enhance(bt) * glowOf(bt) * 3.0 * isLive;
+      if (palette > 0.5) col += enhance(bt) * smoothstep(-40.0, -70.0, bt - 273.15) * 0.5 * isLive + enhance(bt) * glowOf(bt) * 1.2 * isLive;
       float fres = pow(1.0 - max(dot(N, V), 0.0), 2.0);
-      col = mix(col, vec3(0.6, 0.8, 1.0) * lit, fres * 0.25);
-      gl_FragColor = vec4(col, a * mix(0.55, 0.97, isLive));
+      col = mix(col, vec3(0.6, 0.8, 1.0) * lit, fres * 0.12);
+      gl_FragColor = vec4(col, a * mix(0.5, 0.92, isLive));
     }`,
 };
 
@@ -111,11 +113,11 @@ export const ATMOSPHERE = {
   fragment: /* glsl */ `
     uniform vec3 sunDir; varying vec3 vNv; varying vec3 vNw;
     void main(){
-      float k = pow(clamp(0.78 + dot(vNv, vec3(0.0, 0.0, 1.0)), 0.0, 1.0), 5.0);
+      float k = pow(clamp(0.74 + dot(vNv, vec3(0.0, 0.0, 1.0)), 0.0, 1.0), 6.0);
       float sd = dot(-vNw, normalize(sunDir));
       float day = smoothstep(-0.35, 0.45, sd);
       float term = exp(-pow(sd * 3.0, 2.0));
-      vec3 col = mix(vec3(0.25, 0.55, 1.0), vec3(1.0, 0.42, 0.15), term * 0.45) * k * (0.08 + 2.4 * day + 0.5 * term);
+      vec3 col = mix(vec3(0.25, 0.55, 1.0), vec3(1.0, 0.42, 0.15), term * 0.45) * k * (0.05 + 0.95 * day + 0.3 * term);
       gl_FragColor = vec4(col, 1.0);
     }`,
 };

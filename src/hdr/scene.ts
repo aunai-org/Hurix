@@ -47,7 +47,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.95;
+  renderer.toneMappingExposure = 0.85;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 0.005, 200);
   const controls = new OrbitControls(camera, canvas);
@@ -56,7 +56,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.55, 2.8);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.5, 3.2);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
