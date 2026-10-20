@@ -290,7 +290,7 @@ export const VOLUME = {
       float tn = max(max(tmin.x, tmin.y), max(tmin.z, 0.0)), tf = min(min(tmax.x, tmax.y), tmax.z);
       if (tf <= tn) discard;
       vec3 Lw = normalize(sunDir);
-      const int STEPS = 128;
+      const int STEPS = 96;
       float dt = (tf - tn) / float(STEPS);
       // interleaved gradient noise: the start offset varies smoothly across neighbouring pixels, so the banding it hides
       // turns into a fine even dither instead of coarse grain
@@ -323,7 +323,7 @@ export const VOLUME = {
     }`,
 };
 
-/** Lays the half-size 3D storm buffer (premultiplied colour and coverage) over the scene, with a soft 9-tap blur. */
+/** Lays the 3D storm buffer (premultiplied colour and coverage) over the scene through a 3x3 tent filter. */
 export const VOLUME_BLEND = {
   uniforms: { tDiffuse: { value: null }, tVol: { value: null }, texel: { value: new Vector2(1, 1) } },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,

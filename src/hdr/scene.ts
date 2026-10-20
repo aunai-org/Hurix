@@ -59,8 +59,8 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  // the 3D storm is ray-marched into its own half-size buffer, then softened and laid over the scene: the dither that
-  // hides the march's banding blurs into smooth cloud instead of showing as grain
+  // the 3D storm is ray-marched into its own buffer, then lightly filtered (a 3x3 tent) and laid over the scene: the
+  // per-pixel dither that hides the march's banding averages out instead of showing as grain, and detail stays sharp
   const volScene = new THREE.Scene();
   const volRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
   const volBlend = new ShaderPass(VOLUME_BLEND);
@@ -272,7 +272,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     const w = canvas.clientWidth, h = canvas.clientHeight;
     renderer.setSize(w, h, false); composer.setSize(w, h); bloom.setSize(w, h);
     const pr = renderer.getPixelRatio();
-    volRT.setSize(Math.max(1, Math.round(w * pr * 0.5)), Math.max(1, Math.round(h * pr * 0.5)));
+    volRT.setSize(Math.max(1, Math.round(w * pr)), Math.max(1, Math.round(h * pr)));
     volBlend.uniforms.texel.value.set(1 / volRT.width, 1 / volRT.height);
     camera.aspect = w / h; camera.updateProjectionMatrix();
   }

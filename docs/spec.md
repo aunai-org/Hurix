@@ -246,11 +246,11 @@ A square mesh, finely divided, laid over the storm's close-up grid. In the verte
 
 ### 8.2 3D storm
 
-A see-through cloud filling a box above the storm. It's drawn by **ray marching**: for each pixel on screen, the graphics card follows the line of sight through the box in 128 small steps and, at each step, asks how much cloud is there.
+A see-through cloud filling a box above the storm. It's drawn by **ray marching**: for each pixel on screen, the graphics card follows the line of sight through the box in 96 small steps and, at each step, asks how much cloud is there.
 
 - **How much cloud?** The step's position is converted to kilometres east, north and up from the eye, and the infrared close-up is read at that spot. There's cloud between the cloud base and the cloud top: the top comes from the temperature as above; the base sits low near the eye and higher further out. A layer of 3D noise, swirled around the eye the way the real winds turn, breaks it into cloud texture.
 - **Light and shadow.** At each cloudy step, four extra samples toward the sun tell how much cloud the light passes through first, which gives shadows inside the cloud. A little sky light fills the shadows.
-- **Smoothing.** Each pixel starts its steps at a slightly different depth, which turns the stripes a fixed step would leave into a fine dither. The storm is drawn into its own half-size buffer, and that buffer is softened and laid over the scene, so the dither blurs away instead of showing as grain. The half-size buffer also keeps the cost down.
+- **Smoothing.** Each pixel starts its steps at a slightly different depth, which turns the stripes a fixed step would leave into a fine dither. The storm is drawn into its own buffer, and each pixel is averaged with its eight neighbours as it is laid over the scene, so the dither evens out instead of showing as grain while the detail stays sharp.
 
 The heights are a **model** built from real measurements. The satellite sees the top of the cloud, not inside it. The 3D storm shows a believable shape that fits the measured tops; it isn't a scan of the storm's interior.
 
