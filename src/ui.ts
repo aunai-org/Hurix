@@ -162,15 +162,19 @@ export function bindControls(globe: Globe, meta: Meta) {
     }
   });
 
-  // on phones the card starts folded to one line so the globe stays visible
-  const card = document.querySelector<HTMLElement>(".card")!, toggle = $("cardtoggle");
-  const fold = (folded: boolean) => {
-    card.dataset.collapsed = String(folded);
-    toggle.setAttribute("aria-expanded", String(!folded));
-    toggle.setAttribute("aria-label", folded ? "Show storm details" : "Hide storm details");
+  // the card and the legend fold to their title on any screen; on phones the card starts folded so the globe stays visible
+  const foldable = (panel: string, button: string, what: string, folded: boolean) => {
+    const el = document.querySelector<HTMLElement>(panel)!, toggle = $(button);
+    const fold = (f: boolean) => {
+      el.dataset.collapsed = String(f);
+      toggle.setAttribute("aria-expanded", String(!f));
+      toggle.setAttribute("aria-label", `${f ? "Show" : "Hide"} ${what}`);
+    };
+    fold(folded);
+    toggle.addEventListener("click", () => fold(el.dataset.collapsed !== "true"));
   };
-  fold(matchMedia("(max-width: 900px)").matches);
-  toggle.addEventListener("click", () => fold(card.dataset.collapsed !== "true"));
+  foldable(".card", "cardtoggle", "storm details", matchMedia("(max-width: 900px)").matches);
+  foldable(".legend", "legendtoggle", "legend", false);
 
   fillCard(meta, st);
   press("storm", "0");

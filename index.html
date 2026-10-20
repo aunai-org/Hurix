@@ -23,7 +23,7 @@
       <h1 id="card-title">…</h1>
       <button type="button" class="card-toggle" id="cardtoggle" aria-expanded="true" aria-controls="cardbody" aria-label="Hide storm details"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
       <p class="peek" id="peek"></p>
-      <div id="cardbody">
+      <div id="cardbody" class="fold-body">
         <dl class="grid">
           <dt>Eye fix</dt><dd id="fix">…</dd>
           <dt>Moving</dt><dd id="motion">…</dd>
@@ -42,6 +42,8 @@
 
     <aside class="legend panel" aria-label="Legend">
       <div class="eyebrow">Cloud-top temperature</div>
+      <button type="button" class="card-toggle" id="legendtoggle" aria-expanded="true" aria-controls="legendbody" aria-label="Hide legend"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      <div id="legendbody" class="fold-body">
       <div class="ramp"></div>
       <div class="ticks"><span>+20</span><span>−20</span><span>−50</span><span>−70</span><span>−85 °C</span></div>
       <div class="row"><span class="dot"></span>Eye visible in IR</div>
@@ -50,6 +52,7 @@
       <div class="hint" id="modehint"></div>
       <div class="hint" id="sunhint" hidden></div>
       <div class="hint">Europe, Africa and the Indian Ocean show archival clouds. Meteosat isn't in this feed yet.</div>
+      </div>
     </aside>
 
     <div class="bar panel" role="toolbar" aria-label="View controls">

@@ -31,7 +31,7 @@ body { margin: 0; background: var(--space); color: var(--ink); font: 13px/1.45 v
 .grid small { color: var(--muted); font-size: 11px; }
 .est { color: var(--accent); }
 .sep { border-top: 1px solid var(--line); }
-.legend { position: fixed; top: calc(84px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); width: 236px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 11.5px; }
+.legend { box-sizing: border-box; position: fixed; top: calc(84px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); width: 268px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 11.5px; }
 .ramp { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #222 0%, #fff 30%, #8cd9ff 46%, #3366ff 56%, #40ff73 66%, #ffdb26 76%, #ff4720 86%, #ff73ff 100%); }
 .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .row { display: flex; align-items: center; gap: 8px; color: #d7dade; }
@@ -61,20 +61,22 @@ body { margin: 0; background: var(--space); color: var(--ink); font: 13px/1.45 v
 .label { z-index: 1; }
 .panel { z-index: 2; }
 .card { box-sizing: border-box; }
-.card-toggle { display: none; }
-#cardbody { display: flex; flex-direction: column; gap: 10px; }
+.card-toggle { display: grid; place-items: center; position: absolute; top: 4px; right: 4px; width: 40px; height: 40px; border: 0; background: none; color: var(--ink); cursor: pointer; border-radius: 10px; opacity: .75; }
+.card-toggle:hover { opacity: 1; }
+.card-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+.card-toggle svg { transition: transform .2s; }
+.panel[data-collapsed="true"] .card-toggle svg { transform: rotate(-90deg); }
+.panel[data-collapsed="true"] .fold-body { display: none !important; }
+.card[data-collapsed="true"] .peek { display: block; }
+.card h1, .legend > .eyebrow { padding-right: 32px; }
+#cardbody, #legendbody { display: flex; flex-direction: column; gap: 10px; }
 .peek { display: none; margin: 0; color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) {
   .legend { display: none; }
   .card { width: auto; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(70px + env(safe-area-inset-top, 0px)); bottom: auto; padding: 10px 14px; gap: 6px; }
   .card .eyebrow { display: none; }
   .card h1 { font-size: 15px; padding-right: 36px; }
-  .card-toggle { display: grid; place-items: center; position: absolute; top: 2px; right: 2px; width: 44px; height: 44px; border: 0; background: none; color: var(--ink); cursor: pointer; border-radius: 12px; }
-  .card-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
-  .card-toggle svg { transition: transform .2s; }
-  .card[data-collapsed="true"] .card-toggle svg { transform: rotate(-90deg); }
-  .card[data-collapsed="true"] #cardbody { display: none; }
-  .card[data-collapsed="true"] .peek { display: block; }
+  .card-toggle { top: 2px; right: 2px; width: 44px; height: 44px; }
   #cardbody { display: flex; flex-direction: column; gap: 6px; max-height: 42vh; overflow: auto; }
   .card .more { display: none; }
   .seg button { padding: 0 10px; }

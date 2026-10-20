@@ -60,9 +60,6 @@ export const EARTH = {
       vec3 col = albedo * sunCol * max(ndl, 0.0) * (1.0 - shadow);
       // sunset tint near the terminator
       col *= mix(vec3(1.0, 0.55, 0.3), vec3(1.0), smoothstep(0.0, 0.35, ndlS));
-      vec3 H = normalize(L + V);
-      float spec = pow(max(dot(N, H), 0.0), 320.0) * 5.0 + pow(max(dot(N, H), 0.0), 24.0) * 0.08;
-      col += w * spec * 0.1 * vec3(1.0, 0.9, 0.75) * smoothstep(0.0, 0.1, ndlS) * (1.0 - shadow);
       // city lights on the night side, dimmed under cloud
       vec3 lights = pow(texture2D(night, vUv).rgb, vec3(1.6)) * vec3(1.0, 0.78, 0.5) * 7.0;
       float cl = cloudOf(btOf(texture2D(ir, vUv).r));
@@ -95,16 +92,16 @@ export const CLOUDS = {
       // studio light wraps softly; the real sun gives a sharp terminator (high tops catch light just past it)
       float lit = mix(smoothstep(-0.25, 0.6, ndl), smoothstep(-0.05, 0.3, ndl), realSun);
       // grey: classic IR scale, low warm cloud dim and high cold tops bright; enhanced colours tops below about -40 C
-      vec3 grey = vec3(mix(0.42, 0.95, smoothstep(282.0, 210.0, bt)));
-      vec3 base = palette > 0.5 ? mix(grey, enhance(bt) * 0.9, isLive * smoothstep(236.0, 228.0, bt)) : grey;
-      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.3 * mix(vec3(1.0, 0.5, 0.25), vec3(1.0), smoothstep(0.0, 0.4, ndl));
+      vec3 grey = vec3(mix(0.34, 0.8, smoothstep(282.0, 210.0, bt)));
+      vec3 base = palette > 0.5 ? mix(grey, enhance(bt) * 0.75, isLive * smoothstep(236.0, 228.0, bt)) : grey;
+      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 0.95 * mix(vec3(1.0, 0.5, 0.25), vec3(1.0), smoothstep(0.0, 0.4, ndl));
       vec3 col = base * (sunCol * lit + vec3(0.10, 0.13, 0.18));
       // IR sees through the night: keep a cool moonlit read of the cloud tops
-      col += base * vec3(0.30, 0.36, 0.48) * mix(1.0, 0.35, realSun) * (1.0 - lit) * a;
-      if (palette > 0.5) col += enhance(bt) * smoothstep(-40.0, -70.0, bt - 273.15) * 0.5 * isLive + enhance(bt) * glowOf(bt) * 1.2 * isLive;
+      col += base * vec3(0.20, 0.24, 0.32) * mix(1.0, 0.35, realSun) * (1.0 - lit) * a;
+      if (palette > 0.5) col += enhance(bt) * smoothstep(-40.0, -70.0, bt - 273.15) * 0.3 * isLive + enhance(bt) * glowOf(bt) * 0.6 * isLive;
       float fres = pow(1.0 - max(dot(N, V), 0.0), 2.0);
       col = mix(col, vec3(0.6, 0.8, 1.0) * lit, fres * 0.12);
-      gl_FragColor = vec4(col, a * mix(0.5, 0.92, isLive));
+      gl_FragColor = vec4(col, a * mix(0.4, 0.85, isLive));
     }`,
 };
 
@@ -113,11 +110,13 @@ export const ATMOSPHERE = {
   fragment: /* glsl */ `
     uniform vec3 sunDir; varying vec3 vNv; varying vec3 vNw;
     void main(){
-      float k = pow(clamp(0.74 + dot(vNv, vec3(0.0, 0.0, 1.0)), 0.0, 1.0), 6.0);
+      // back faces: t is 0 at the halo's outer edge and about 0.33 at the globe's limb
+      float t = clamp(-vNv.z, 0.0, 1.0);
+      float k = pow(smoothstep(0.0, 0.34, t), 3.0);
       float sd = dot(-vNw, normalize(sunDir));
       float day = smoothstep(-0.35, 0.45, sd);
       float term = exp(-pow(sd * 3.0, 2.0));
-      vec3 col = mix(vec3(0.25, 0.55, 1.0), vec3(1.0, 0.42, 0.15), term * 0.45) * k * (0.05 + 0.95 * day + 0.3 * term);
+      vec3 col = mix(vec3(0.25, 0.55, 1.0), vec3(1.0, 0.42, 0.15), term * 0.45) * k * (0.01 + 0.06 * day + 0.02 * term);
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -170,12 +169,12 @@ export const CLOUD_TOPS = {
       float ndl = max(dot(N, L), 0.0);
       float wrap = max((dot(N, L) + 0.35) / 1.35, 0.0);
       vec3 base = palette > 0.5 ? enhance(bt) : vec3(1.0);
-      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 2.4;
+      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.8;
       vec3 sky = vec3(0.22, 0.36, 0.62) * (0.35 + 0.65 * max(dot(N, vUp), 0.0));
       vec3 col = base * (sunCol * mix(ndl, wrap, 0.35) * (1.0 - shadow * 0.85) + sky);
       // silver lining on edges facing away
       float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0) * max(dot(-V, L), 0.0);
-      col += vec3(1.0, 0.9, 0.8) * rim * 3.0;
+      col += vec3(1.0, 0.9, 0.8) * rim * 1.5;
       if (palette > 0.5) col += enhance(bt) * glowOf(bt) * 2.6;
       gl_FragColor = vec4(col, a);
     }`,
@@ -233,7 +232,7 @@ export const VOLUME = {
       float dt = (tf - tn) / float(STEPS);
       float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
       vec3 acc = vec3(0.0); float trans = 1.0;
-      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.9, skyCol = vec3(0.22, 0.38, 0.7) * 0.35;
+      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.5, skyCol = vec3(0.22, 0.38, 0.7) * 0.35;
       for (int i = 0; i < STEPS; i++) {
         float t = tn + (float(i) + jitter) * dt;
         vec3 w = (modelMatrix * vec4(ro + rd * t, 1.0)).xyz;
