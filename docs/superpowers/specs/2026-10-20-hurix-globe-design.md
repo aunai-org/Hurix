@@ -25,8 +25,8 @@ browser                         public/data + public/textures ──► src/hdr/
 
 - **pipeline/fetch.sh** downloads one 10-minute slot: GOES-19/18 band 13 and cloud-top height, plus Himawari-9 band 13 tiles.
 - **pipeline/reproject.py** maps each geostationary disc to an equirectangular grid. It uses whichever satellite views each point from the highest angle, and blends across the seams.
-- **pipeline/storm.py** finds the eye (a warm spot ringed by the coldest tops) and tracks it back 48 h in 3-hour steps. When no eye is visible it falls back to the centre of the cold cloud mass, and marks that fix as such.
-- **pipeline/export.py** writes the textures, a 3-hour loop at 10-minute steps, and `meta.json` (frame time, eye, motion, eye and ring temperatures, cloud-shield radius, track).
+- **pipeline/storms.py** finds every storm with a solid cold core that holds together for a day, and tracks each one back up to 48 h in 3-hour steps with the satellite that sees it best. An eye fix needs a warm spot closed off by cold tops; otherwise it uses the centre of the cold cloud mass and marks that fix as such. Each storm gets a 2 km close-up on the 3D views' tangent grid.
+- **pipeline/export.py** writes the global IR textures; storms.py writes each storm's close-up, a 3-hour loop at 10-minute steps, and its entry in `meta.json` (eye, motion, eye and ring temperatures, cloud-shield radius, track).
 - **src/hdr/** holds the renderer: an HDR half-float pipeline with ACES tone mapping and bloom. Its parts are the Earth (Blue Marble day, city lights, ocean glint, bump, cloud shadows), the IR cloud shell, the atmosphere rim, the track, the cloud-top height field, the volume ray-marcher, and the wind tracers.
 - **src/ui.ts** fills the card from `meta.json` and runs the mode, palette, lighting, loop, height and cutaway controls.
 
@@ -38,7 +38,6 @@ browser                         public/data + public/textures ──► src/hdr/
 
 ## Out of scope for this first PR
 
-- Several storms at once, and storm search.
 - Official tracks, forecast cones and wind radii from NHC/JTWC.
 - Scheduled data refresh in CI. The pipeline runs by hand for now.
 

@@ -183,12 +183,11 @@ export const CLOUD_TOPS = {
  * Mode 2: a volumetric cloud ray-marched from the same frame. Density sits between a cloud base and the IR cloud top,
  * measured against the true sphere, with noise sheared around the eye. The cutaway shows the Holland wind profile.
  */
-export function volumeShader(rmwKm: number) {
-  return {
+export const VOLUME = {
     vertex: /* glsl */ `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragment: /* glsl */ `
     uniform sampler2D frameA, frameB; uniform float frameMix, exag, palette, time, cutaway; uniform vec3 sunDir;
-    uniform vec3 eye, east, north; uniform float patchAng;
+    uniform vec3 eye, east, north; uniform float patchAng, rmw;
     uniform mat4 modelMatrix; varying vec3 vW;
     ${GLSL_IR}
     float codeAt(vec2 uv){ return mix(texture2D(frameA, uv).r, texture2D(frameB, uv).r, frameMix); }
@@ -247,7 +246,7 @@ export function volumeShader(rmwKm: number) {
           vec3 L = base * (sunCol * lightT * mix(0.6, 1.0, powder) + skyCol);
           if (palette > 0.5) L += enhance(bt) * glowOf(bt) * 1.4;
           if (cutaway > 0.5) {
-            float r = length(km.xy), x = pow(${rmwKm.toFixed(1)} / max(r, 1.0), 1.6);
+            float r = length(km.xy), x = pow(rmw / max(r, 1.0), 1.6);
             float v = sqrt(x * exp(1.0 - x)) * smoothstep(0.0, 4.0, km.z) * (1.0 - smoothstep(10.0, 16.0, km.z));
             float nearCut = 1.0 - smoothstep(0.0, 18.0, min(abs(km.x), abs(km.y)));
             L += heat(v) * nearCut * 4.0 * v;
@@ -262,21 +261,19 @@ export function volumeShader(rmwKm: number) {
       if (trans > 0.995) discard;
       gl_FragColor = vec4(acc, 1.0 - trans);
     }`,
-  };
-}
+};
 
 /** Wind tracers from a Holland profile: low-level inflow spiralling in, upper outflow spiralling out. */
-export function windShader(rmwKm: number, vmaxKt: number) {
-  return {
+export const WIND = {
     vertex: /* glsl */ `
-    attribute vec4 seed; uniform float time, exag; varying float vSpeed; varying float vFade;
+    attribute vec4 seed; uniform float time, exag, rmw, vmax; varying float vSpeed; varying float vFade;
     void main(){
       float r0 = seed.x, a0 = seed.y, z = seed.z, outflow = seed.w;
-      float x = pow(${rmwKm.toFixed(1)} / r0, 1.6);
+      float x = pow(rmw / r0, 1.6);
       float v = sqrt(x * exp(1.0 - x));                  // 0..1 of Vmax
       float life = fract(time * 0.02 + a0 * 0.159);
       float r = outflow > 0.5 ? r0 * (0.6 + life * 0.9) : r0 * (1.2 - life * 0.55);
-      float omega = v * ${vmaxKt.toFixed(1)} * 1.852 / r * 0.9;  // rad per (scaled) hour
+      float omega = v * vmax * 1.852 / r * 0.9;  // rad per (scaled) hour
       float a = a0 + (outflow > 0.5 ? -1.0 : 1.0) * omega * time * 0.35;
       float zz = (z * exag - r * r / 12742.0) / 6371.0;    // follow the curve of the Earth
       vec3 p = vec3(cos(a) * r / 6371.0, sin(a) * r / 6371.0, zz);
@@ -293,5 +290,4 @@ export function windShader(rmwKm: number, vmaxKt: number) {
       col = mix(col, vec3(1.0, 0.25, 0.15), smoothstep(0.8, 1.0, vSpeed));
       gl_FragColor = vec4(col * (0.4 + 2.6 * vSpeed) * vFade * (1.0 - d * 4.0) * 0.6, 1.0);
     }`,
-  };
-}
+};

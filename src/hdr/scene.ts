@@ -1,12 +1,12 @@
-// The HDR globe: Earth, the live IR cloud shell, atmosphere, the eye track, and the two 3D views of the storm.
+// The HDR globe: Earth, the live IR cloud shell, atmosphere, every storm's track, and the two 3D views of the selected storm.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, SKY, volumeShader, windShader } from "./glsl";
-import { dvorak, frameDate, subsolar, type Meta } from "../meta";
+import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, SKY, VOLUME, WIND } from "./glsl";
+import { dvorak, frameDate, subsolar, type Meta, type Storm } from "../meta";
 
 export type Mode = 0 | 1 | 2;
 const PATCH_KM = 2048, R_KM = 6371, D2R = Math.PI / 180;
@@ -19,7 +19,9 @@ export function ll2v(lat: number, lon: number, r = 1) {
 
 export interface Globe {
   camera: THREE.PerspectiveCamera;
+  /** The selected storm's eye, as a unit vector. */
   eye: THREE.Vector3;
+  selectStorm(i: number): void;
   setMode(m: Mode): void;
   setPalette(enhanced: boolean): void;
   setRealSun(on: boolean): void;
@@ -36,8 +38,8 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const FRAME = frameDate(meta);
   const sun = subsolar(FRAME);
   const SUN_REAL = ll2v(sun.lat, sun.lon).normalize();
-  const RMW_KM = Math.max(15, (meta.eyeDiameterKm ?? 30) * 0.65);
-  const LOOP_N = meta.loopFrames;
+  const storms = meta.storms;
+  let cur = 0;
 
   let mode: Mode = 0, realSun = false;
 
@@ -78,19 +80,23 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     sky: tex("textures/night-sky.png", true),
     ir: tex("data/ir_global.jpg", false),
     live: tex("data/ir_live_mask.png", false),
-    storm: tex("data/storm_ir.png", false),
   };
-  T.storm.wrapS = T.storm.wrapT = THREE.ClampToEdgeWrapping;
-  const LOOP = Array.from({ length: LOOP_N }, (_, i) => {
-    const t = tex(`data/loop/f${String(i).padStart(2, "0")}.jpg`, false);
-    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  // each storm's close-up and loop, loaded the first time it is selected
+  const stormTex = new Map<string, { still: THREE.Texture; loop: THREE.Texture[] }>();
+  const texFor = (s: Storm) => {
+    let t = stormTex.get(s.id);
+    if (!t) {
+      const clamp = (x: THREE.Texture) => { x.wrapS = x.wrapT = THREE.ClampToEdgeWrapping; return x; };
+      t = { still: clamp(tex(`${s.dir}storm_ir.png`, false)), loop: Array.from({ length: s.loopFrames }, (_, i) => clamp(tex(`${s.dir}loop/f${String(i).padStart(2, "0")}.jpg`, false))) };
+      stormTex.set(s.id, t);
+    }
     return t;
-  });
+  };
+  const rmwOf = (s: Storm) => Math.max(15, (s.eyeDiameterKm ?? 30) * 0.65);
 
   // ---------- uniforms shared by every material ----------
-  const eye = ll2v(meta.eye.lat, meta.eye.lon).normalize();
-  const east = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), eye).normalize();
-  const north = new THREE.Vector3().crossVectors(eye, east).normalize();
+  const eye = new THREE.Vector3(), east = new THREE.Vector3(), north = new THREE.Vector3();
+  const first = texFor(storms[0]);
   const uni = {
     sunDir: { value: new THREE.Vector3(1, 0, 0) },
     palette: { value: 1 },
@@ -100,12 +106,14 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     east: { value: east },
     north: { value: north },
     patchAng: { value: PATCH_KM / R_KM },
-    frameA: { value: LOOP[LOOP_N - 1] ?? T.storm },
-    frameB: { value: T.storm },
+    frameA: { value: first.still },
+    frameB: { value: first.still },
     frameMix: { value: 1 },
     exag: { value: 14 },
     cutaway: { value: 0 },
     realSun: { value: 0 },
+    rmw: { value: 30 },
+    vmax: { value: 100 },
   };
 
   // ---------- stars, Earth, clouds, atmosphere ----------
@@ -130,30 +138,34 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const amber = (k: number) => new THREE.Color(1.0, 0.62, 0.25).multiplyScalar(k);
   const trackGroup = new THREE.Group();
   scene.add(trackGroup);
-  {
-    const TR = meta.track;
+  const dotGeo = new THREE.SphereGeometry(0.0042, 16, 12), ringGeo = new THREE.TorusGeometry(0.0042, 0.0011, 8, 24);
+  const glow = new THREE.MeshBasicMaterial({ color: amber(4) }), tubeMat = new THREE.MeshBasicMaterial({ color: amber(3.2) });
+  const pulseMat = new THREE.MeshBasicMaterial({ color: amber(5), transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  const pulseGeo = new THREE.RingGeometry(0.01, 0.0125, 64);
+  const pulses: THREE.Mesh[] = [];
+  for (const st of storms) {
+    const TR = st.track;
     // light smoothing of cloud-mass fixes only; eye fixes stay as observed
     const pts = TR.map((p, i) => {
       if (p[3]) return [p[1], p[2]];
       const a = TR[Math.max(i - 1, 0)], b = TR[Math.min(i + 1, TR.length - 1)];
       return [(a[1] + p[1] * 2 + b[1]) / 4, (a[2] + p[2] * 2 + b[2]) / 4];
     });
-    const curve = new THREE.CatmullRomCurve3(pts.map(([la, lo]) => ll2v(la, lo, 1.012)));
-    trackGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 240, 0.0028, 10), new THREE.MeshBasicMaterial({ color: amber(3.2) })));
-    const dotGeo = new THREE.SphereGeometry(0.0042, 16, 12), ringGeo = new THREE.TorusGeometry(0.0042, 0.0011, 8, 24);
-    const glow = new THREE.MeshBasicMaterial({ color: amber(4) });
+    if (pts.length > 1) {
+      const curve = new THREE.CatmullRomCurve3(pts.map(([la, lo]) => ll2v(la, lo, 1.012)));
+      trackGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 240, 0.0028, 10), tubeMat));
+    }
     for (const p of TR) {
       const m = new THREE.Mesh(p[3] ? dotGeo : ringGeo, glow);
       m.position.copy(ll2v(p[1], p[2], 1.012));
       m.lookAt(m.position.clone().multiplyScalar(2));
       trackGroup.add(m);
     }
+    const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+    pulse.position.copy(ll2v(st.eye.lat, st.eye.lon, 1.013));
+    pulse.lookAt(pulse.position.clone().multiplyScalar(2));
+    trackGroup.add(pulse); pulses.push(pulse);
   }
-  const pulseMat = new THREE.MeshBasicMaterial({ color: amber(5), transparent: true, side: THREE.DoubleSide, depthWrite: false });
-  const pulse = new THREE.Mesh(new THREE.RingGeometry(0.01, 0.0125, 64), pulseMat);
-  pulse.position.copy(ll2v(meta.eye.lat, meta.eye.lon, 1.013));
-  pulse.lookAt(pulse.position.clone().multiplyScalar(2));
-  scene.add(pulse);
 
   // ---------- mode 1: 3D cloud tops ----------
   const patch = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 640, 640), new THREE.ShaderMaterial({
@@ -164,15 +176,12 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
 
   // ---------- mode 2: volumetric storm + wind tracers, in a frame tangent at the eye ----------
   const stormFrame = new THREE.Group();
-  stormFrame.matrix.makeBasis(east, north, eye).setPosition(eye.clone());
   stormFrame.matrixAutoUpdate = false;
-  stormFrame.updateMatrixWorld(true);
   scene.add(stormFrame);
   const HALF = PATCH_KM / 2 / R_KM;
-  const vol = volumeShader(RMW_KM);
   const volBox = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 1.45).translate(0, 0, 0.275), new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: false, side: THREE.BackSide,
-    uniforms: uni, vertexShader: vol.vertex, fragmentShader: vol.fragment,
+    uniforms: uni, vertexShader: VOLUME.vertex, fragmentShader: VOLUME.fragment,
   }));
   volBox.visible = false; volBox.frustumCulled = false; volBox.renderOrder = 10;
   stormFrame.add(volBox);
@@ -191,10 +200,9 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     pGeo.setAttribute("seed", new THREE.BufferAttribute(seed, 4));
     pGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(N_P * 3), 3));
   }
-  const wind = windShader(RMW_KM, dvorak(meta.eyeK, meta.ringK).kt);
   const particles = new THREE.Points(pGeo, new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    uniforms: uni, vertexShader: wind.vertex, fragmentShader: wind.fragment,
+    uniforms: uni, vertexShader: WIND.vertex, fragmentShader: WIND.fragment,
   }));
   particles.visible = false; particles.frustumCulled = false; particles.renderOrder = 9;
   stormFrame.add(particles);
@@ -205,6 +213,22 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   };
   setBox();
 
+  // point everything storm-specific at storm i
+  const useStorm = (i: number) => {
+    cur = i;
+    const st = storms[i];
+    eye.copy(ll2v(st.eye.lat, st.eye.lon)).normalize();
+    east.crossVectors(new THREE.Vector3(0, 1, 0), eye).normalize();
+    north.crossVectors(eye, east).normalize();
+    stormFrame.matrix.makeBasis(east, north, eye).setPosition(eye);
+    stormFrame.updateMatrixWorld(true);
+    uni.rmw.value = rmwOf(st);
+    uni.vmax.value = dvorak(st.eyeK, st.ringK).kt;
+    const t = texFor(st);
+    uni.frameA.value = t.loop[t.loop.length - 1] ?? t.still; uni.frameB.value = t.still; uni.frameMix.value = 1;
+  };
+  useStorm(0);
+
   // ---------- camera moves ----------
     let fly: { p0: THREE.Vector3; p1: THREE.Vector3; t0: THREE.Vector3; t1: THREE.Vector3; start: number; ms: number } | null = null;
   const flyTo = (pos: THREE.Vector3, target: THREE.Vector3, ms = 1800) => {
@@ -214,7 +238,8 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     if (m === 0) {
       // keep the whole disc in view on narrow portrait screens
       const h = Math.atan(Math.tan(16 * D2R) * Math.min(innerWidth / innerHeight, 1));
-      return { pos: ll2v(meta.eye.lat + 4, meta.eye.lon + 4, Math.min(7.5, Math.max(4.3, 0.9 / Math.sin(h)))), target: new THREE.Vector3() };
+      const st = storms[cur];
+      return { pos: ll2v(st.eye.lat + 4, st.eye.lon + 4, Math.min(7.5, Math.max(4.3, 0.9 / Math.sin(h)))), target: new THREE.Vector3() };
     }
     const back = eye.clone().multiplyScalar(0.62).addScaledVector(north, -0.34).addScaledVector(east, 0.1);
     return { pos: eye.clone().add(back), target: eye.clone() };
@@ -231,7 +256,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   addEventListener("resize", resize);
   resize();
   const v0 = viewFor(0);
-  camera.position.copy(ll2v(meta.eye.lat - 5, meta.eye.lon + 22, 5.2));
+  camera.position.copy(ll2v(storms[0].eye.lat - 5, storms[0].eye.lon + 22, 5.2));
   flyTo(v0.pos, v0.target, 2600);
 
   const listeners: ((m: Mode, dt: number) => void)[] = [];
@@ -262,7 +287,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     } else uni.sunDir.value.copy(SUN_REAL);
     uni.realSun.value = realSun ? 1 : 0;
     const s = 1 + 0.35 * Math.sin(uni.time.value * 2.4);
-    pulse.scale.setScalar(s); pulseMat.opacity = 0.9 - (s - 1) * 1.6;
+    pulses.forEach((p, i) => p.scale.setScalar(i === cur ? s : 0.8)); pulseMat.opacity = 0.9 - (s - 1) * 1.6;
     for (const fn of listeners) fn(mode, dt);
     composer.render();
   }
@@ -271,12 +296,18 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   return {
     camera,
     eye,
+    selectStorm(i) {
+      if (i === cur) return;
+      useStorm(i);
+      const v = viewFor(mode);
+      flyTo(v.pos, v.target);
+    },
     setMode(m) {
       mode = m;
       resize();
       uni.patchOn.value = m > 0 ? 1 : 0;
       patch.visible = m === 1; volBox.visible = m === 2; particles.visible = m === 2;
-      trackGroup.visible = m === 0; pulse.visible = m === 0;
+      trackGroup.visible = m === 0;
       controls.minDistance = m === 0 ? 1.15 : 0.05;
       const v = viewFor(m);
       flyTo(v.pos, v.target);
@@ -293,9 +324,10 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     setHeight(exag) { uni.exag.value = exag; setBox(); },
     setCutaway(on) { uni.cutaway.value = on ? 1 : 0; },
     setLoop(t) {
-      if (t === null || LOOP_N < 2) { uni.frameA.value = LOOP[LOOP_N - 1] ?? T.storm; uni.frameB.value = T.storm; uni.frameMix.value = 1; return; }
-      const i = Math.floor(t);
-      uni.frameA.value = LOOP[i]; uni.frameB.value = LOOP[(i + 1) % LOOP_N]; uni.frameMix.value = t - i;
+      const { still, loop } = texFor(storms[cur]), n = loop.length;
+      if (t === null || n < 2) { uni.frameA.value = loop[n - 1] ?? still; uni.frameB.value = still; uni.frameMix.value = 1; return; }
+      const i = Math.floor(t) % n;
+      uni.frameA.value = loop[i]; uni.frameB.value = loop[(i + 1) % n]; uni.frameMix.value = t - Math.floor(t);
     },
     onFrame(fn) { listeners.push(fn); },
   };
