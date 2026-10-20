@@ -39,6 +39,8 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const RMW_KM = Math.max(15, (meta.eyeDiameterKm ?? 30) * 0.65);
   const LOOP_N = meta.loopFrames;
 
+  let mode: Mode = 0, realSun = false;
+
   // ---------- renderer ----------
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -203,8 +205,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   setBox();
 
   // ---------- camera moves ----------
-  let mode: Mode = 0, realSun = false;
-  let fly: { p0: THREE.Vector3; p1: THREE.Vector3; t0: THREE.Vector3; t1: THREE.Vector3; start: number; ms: number } | null = null;
+    let fly: { p0: THREE.Vector3; p1: THREE.Vector3; t0: THREE.Vector3; t1: THREE.Vector3; start: number; ms: number } | null = null;
   const flyTo = (pos: THREE.Vector3, target: THREE.Vector3, ms = 1800) => {
     fly = { p0: camera.position.clone(), p1: pos, t0: controls.target.clone(), t1: target, start: performance.now(), ms: reduceMotion ? 1 : ms };
   };
@@ -214,7 +215,10 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     return { pos: eye.clone().add(back), target: eye.clone() };
   };
 
+  // the volume ray-march is the costly pass, so the 3D storm renders at a lower pixel ratio on high-density screens
+  const pixelRatio = (m: Mode) => Math.min(devicePixelRatio, m === 2 ? 1.25 : 2);
   function resize() {
+    renderer.setPixelRatio(pixelRatio(mode)); composer.setPixelRatio(pixelRatio(mode));
     const w = canvas.clientWidth, h = canvas.clientHeight;
     renderer.setSize(w, h, false); composer.setSize(w, h); bloom.setSize(w, h);
     camera.aspect = w / h; camera.updateProjectionMatrix();
@@ -261,6 +265,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     eye,
     setMode(m) {
       mode = m;
+      resize();
       uni.patchOn.value = m > 0 ? 1 : 0;
       patch.visible = m === 1; volBox.visible = m === 2; particles.visible = m === 2;
       trackGroup.visible = m === 0; pulse.visible = m === 0;

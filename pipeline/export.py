@@ -37,7 +37,7 @@ os.environ.setdefault("ROWS", "2,3,4"); os.environ.setdefault("COLS", "2,3,4,5,6
 import importlib.util
 spec = importlib.util.spec_from_file_location("storm", os.path.join(HERE, "storm.py")); storm = importlib.util.module_from_spec(spec); spec.loader.exec_module(storm)
 rows = [int(v) for v in os.environ["ROWS"].split(",")]; cols = [int(v) for v in os.environ["COLS"].split(",")]
-n = 0
+n, times = 0, []
 for k in range(17, -1, -1):
     when = FRAME - timedelta(minutes=10 * k)
     try:
@@ -46,6 +46,10 @@ for k in range(17, -1, -1):
         print("loop skip", when, e); continue
     c = np.pad(np.nan_to_num(im, nan=290), half, mode="edge")[ey:ey + 2 * half, ex:ex + 2 * half]
     Image.fromarray((code(c) * 255 + .5).astype(np.uint8)).resize((768, 768), Image.LANCZOS).save(os.path.join(OUT, "loop", f"f{n:02d}.jpg"), quality=90); n += 1
+    times.append(when.strftime("%Y-%m-%dT%H:%MZ"))
+for old in os.listdir(os.path.join(OUT, "loop")):  # frames left over from a longer loop
+    if old.endswith(".jpg") and int(old[1:3]) >= n:
+        os.remove(os.path.join(OUT, "loop", old))
 
 track = json.load(open(os.path.join(HERE, "track.json")))
 # motion from the last ~21 h of clear-eye fixes
@@ -54,7 +58,7 @@ a, b = clear[max(len(clear) - 8, 0)], clear[-1]
 hrs = (datetime.strptime(b["t"], "%Y-%m-%dT%H:%MZ") - datetime.strptime(a["t"], "%Y-%m-%dT%H:%MZ")).total_seconds() / 3600
 dy = (b["lat"] - a["lat"]) * 60; dx = (b["lon"] - a["lon"]) * 60 * np.cos(np.radians((a["lat"] + b["lat"]) / 2))
 meta = {
-    "frame": FRAME.strftime("%Y-%m-%dT%H:%MZ"), "loopFrames": n,
+    "frame": FRAME.strftime("%Y-%m-%dT%H:%MZ"), "loopFrames": n, "loopTimes": times,
     "eye": {"lat": track[-1]["lat"], "lon": track[-1]["lon"]},
     "eyeK": round(eye_k, 1), "ringK": round(ring_k, 1), "eyeDiameterKm": round(float(eye_d), 0) if eye_d else None,
     "cdoRadiusKm": round(cdo_r), "motion": {"kt": round(float(np.hypot(dx, dy) / hrs), 1), "bearing": round(float((np.degrees(np.arctan2(dx, dy)) + 360) % 360)), "hours": round(hrs)},

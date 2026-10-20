@@ -60,6 +60,8 @@ def fetch_tiles(when, rows, cols):
             img[r - r0:r - r0 + 550, c - c0:c - c0 + 550] = np.ma.filled(d["Sectorized_CMI"][:].astype(np.float32), np.nan)
             xx = d["x"][:] * 1e-6; yy = d["y"][:] * 1e-6
             xs = xx[0] - (c - c0) * DX; ys = yy[0] + (r - r0) * DX
+    if xs is None:  # e.g. Himawari's daily housekeeping slot at 02:40 UTC has no data
+        raise FileNotFoundError(f"no band-13 tiles at {when:%Y-%m-%d %H:%M}")
     return img, xs, ys  # x of column 0, y of row 0 (y decreases downward)
 
 
@@ -105,14 +107,20 @@ if __name__ == "__main__":
     frames = []
     pts = []
     for h in range(0, 49, 3):
-        when = t_end - timedelta(hours=h)
-        try:
-            img, x0, y0 = fetch_tiles(when, rows, cols)
-        except Exception as e:  # a missing hour is skipped, not filled in
-            print("skip", when, e); continue
+        img = None
+        for dm in (0, -10, 10):  # a missing slot falls back to its neighbour 10 minutes away
+            when = t_end - timedelta(hours=h, minutes=dm)
+            try:
+                img, x0, y0 = fetch_tiles(when, rows, cols); break
+            except Exception as e:
+                print("skip", when, e)
+        if img is None:  # a missing fix is left out, not filled in
+            continue
         if len(pts) >= 2:  # extrapolate the motion of the last two fixes
             guess = (2 * pts[-1][0] - pts[-2][0], 2 * pts[-1][1] - pts[-2][1])
         ex, ey, teye, tring, score = find_eye(img, guess, search=120 if guess is None else 40)
+        if tring > 240 and track:  # no deep convection near the centre: too weak to fix reliably, so the track ends here
+            print("stop", when, "ring", round(tring, 1)); break
         clear = teye > 260 and score > 50
         if not clear and guess is not None:  # no eye yet: centre of the coldest cloud mass near the expected spot
             from scipy.ndimage import gaussian_filter

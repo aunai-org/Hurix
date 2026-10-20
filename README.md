@@ -38,7 +38,7 @@ npm run build      # type-check and build the static site into dist/
 ```sh
 python3 -m pip install -r pipeline/requirements.txt
 npm run data                          # the slot 40 minutes ago
-sh pipeline/run.sh 2026-10-20T01:10   # or a given 10-minute slot (UTC)
+sh pipeline/run.sh 2026-10-20T05:40   # or a given 10-minute slot (UTC)
 ```
 
 The pipeline reads NOAA's open data on AWS (no account needed) and writes `public/data`:

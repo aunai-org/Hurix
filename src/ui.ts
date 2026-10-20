@@ -23,6 +23,8 @@ export function fillCard(meta: Meta) {
   $("eyed").textContent = meta.eyeDiameterKm ? `${meta.eyeDiameterKm} km wide · ${degC(meta.eyeK)}` : "Not clear in this frame";
   $("tops").textContent = `${degC(meta.ringK)} · ≈ ${topKm(meta.ringK).toFixed(0)} km`;
   $("cdo").textContent = `≈ ${meta.cdoRadiusKm} km radius below −63 °C`;
+  const tr = meta.track, span = tr.length > 1 ? Math.round((Date.parse(tr[tr.length - 1][0]) - Date.parse(tr[0][0])) / 36e5) : 0;
+  $("trackinfo").textContent = `${span} h of fixes from Himawari-9, every 3 h`;
   html("vmax", `≈ ${dv.kt} kt (T${dv.t.toFixed(1)})<br><small>rough Dvorak-style IR estimate, not official</small>`);
 }
 
@@ -70,14 +72,15 @@ export function bindControls(globe: Globe, meta: Meta) {
   const els = labels.map((l) => root.appendChild(Object.assign(document.createElement("div"), { className: l.cls, textContent: l.text })));
   const canvas = $("gl"), tmp = new THREE.Vector3(), toCam = new THREE.Vector3();
 
-  let shownMins = -1, shownPlaying = !playing;
+  let shownIdx = -1, shownPlaying = !playing;
   globe.onFrame((mode, dt) => {
     if (playing) loopT = (loopT + dt * 3.0) % loopN;
     globe.setLoop(playing ? loopT : null);
-    const mins = Math.round((loopN - 1 - loopT) * 10);
-    if (mins !== shownMins || playing !== shownPlaying) {
-      shownMins = mins; shownPlaying = playing;
-      const t = new Date(frame.getTime() - mins * 60000);
+    const shown = Math.min(Math.round(loopT), loopN - 1);
+    if (shown !== shownIdx || playing !== shownPlaying) {
+      shownIdx = shown; shownPlaying = playing;
+      const iso = meta.loopTimes?.[shown];
+      const t = iso ? new Date(iso.replace("Z", ":00Z")) : new Date(frame.getTime() - (loopN - 1 - shown) * 600000);
       timeEl.innerHTML = `<b>${hhmm(t)}</b> · ${dayStr(t)}${playing ? " · loop" : ""}`;
     }
     const w = canvas.clientWidth, h = canvas.clientHeight, cam = globe.camera;

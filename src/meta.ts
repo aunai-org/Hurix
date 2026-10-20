@@ -4,6 +4,8 @@ export interface Meta {
   /** Frame time, "YYYY-MM-DDTHH:MMZ". */
   frame: string;
   loopFrames: number;
+  /** Time of each loop frame (older pipelines left this out; the frames were then 10 minutes apart). */
+  loopTimes?: string[];
   eye: { lat: number; lon: number };
   /** Warmest pixel in the eye and coldest top in the ring around it, in kelvin. */
   eyeK: number;
