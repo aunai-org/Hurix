@@ -231,6 +231,14 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   };
   setBox();
 
+  // OrbitControls orbits around camera.up, fixed when it was built; in the 3D views "up" is the storm's own vertical
+  const Y = new THREE.Vector3(0, 1, 0);
+  const orbitAxis = (up: THREE.Vector3) => {
+    camera.up.copy(up);
+    const c = controls as unknown as { _quat: THREE.Quaternion; _quatInverse: THREE.Quaternion };
+    c._quat.setFromUnitVectors(up, Y); c._quatInverse.copy(c._quat).invert();
+  };
+
   // point everything storm-specific at storm i
   const useStorm = (i: number) => {
     cur = i;
@@ -246,6 +254,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     uni.frameA.value = t.loop[t.loop.length - 1] ?? t.still; uni.frameB.value = t.still; uni.frameMix.value = 1;
     uni.vis.value = t.vis ?? t.still;
     syncVis();
+    if (mode > 0) orbitAxis(eye);
   };
   // true colour is a single still, so the loop plays in infrared
   function syncVis() { uni.visOn.value = style === 0 && !playing && texFor(storms[cur]).vis ? 1 : 0; }
@@ -298,9 +307,15 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       controls.target.copy(fly.t0).lerp(fly.t1, e);
       if (k >= 1) fly = null;
     }
-    // zoomed in, a drag orbits the storm; scroll out and the pivot slides to the Earth's centre so the globe spins
-    if (mode > 0 && !fly) controls.target.copy(eye).multiplyScalar(1 - THREE.MathUtils.smoothstep(camera.position.length(), 1.5, 2.4));
+    // zoomed in, a drag orbits the storm; scroll out and the pivot slides to the Earth's centre so the globe spins.
+    // Close in, the camera can't drop below the storm's horizon (or into the globe).
+    if (mode > 0) {
+      const out = THREE.MathUtils.smoothstep(camera.position.length(), 1.5, 2.4);
+      if (!fly) controls.target.copy(eye).multiplyScalar(1 - out);
+      controls.maxPolarAngle = THREE.MathUtils.lerp(1.32, Math.PI, out);
+    }
     controls.update();
+    if (camera.position.length() < 1.012) camera.position.setLength(1.012);
     // studio light: a key light from upper left, slightly behind the viewer; real sun: the subsolar point at frame time
     if (!realSun) {
       camera.matrixWorld.extractBasis(right, upv, fwd);
@@ -331,6 +346,8 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       imagery.visible = m === 0; patch.visible = m === 1; volBox.visible = m === 2; particles.visible = m === 2;
       trackGroup.visible = m === 0 && showTrack;
       controls.minDistance = m === 0 ? 1.07 : 0.05;
+      orbitAxis(m === 0 ? Y : eye);
+      if (m === 0) controls.maxPolarAngle = Math.PI;
       const v = viewFor(m);
       flyTo(v.pos, v.target);
     },
