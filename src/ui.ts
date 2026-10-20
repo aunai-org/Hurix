@@ -1,6 +1,6 @@
 // The card, the legend, the control bar and the place labels. Everything shown is measured from the frame in meta.json.
 import * as THREE from "three";
-import { dayStr, degC, dvorak, frameDate, hhmm, topKm, type Meta } from "./meta";
+import { dayStr, degC, dvorak, frameDate, hhmm, subsolar, topKm, type Meta } from "./meta";
 import { ll2v, type Globe, type Mode } from "./hdr/scene";
 
 const CITIES: [string, number, number][] = [
@@ -34,7 +34,7 @@ export function bindControls(globe: Globe, meta: Meta) {
   const loopN = meta.loopFrames;
   const hints = [
     `Infrared at 10.4 µm from three geostationary satellites, stitched at ${hhmm(frame)} ${dayStr(frame)}. Colder tops are higher.`,
-    "The real 2 km Himawari frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to orbit, scroll to zoom.",
+    "The real 2 km Himawari frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to orbit the storm; scroll out to spin the globe.",
     "Volumetric cloud built from the same frame. Tracers show the modelled wind: inflow near the sea, outflow aloft. Turn on Cutaway for wind speed.",
   ];
   const press = (attr: string, v: string) =>
@@ -49,7 +49,16 @@ export function bindControls(globe: Globe, meta: Meta) {
   };
   document.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(Number(b.dataset.mode) as Mode)));
   document.querySelectorAll<HTMLElement>("[data-pal]").forEach((b) => b.addEventListener("click", () => { globe.setPalette(b.dataset.pal === "1"); press("pal", b.dataset.pal!); }));
-  document.querySelectorAll<HTMLElement>("[data-light]").forEach((b) => b.addEventListener("click", () => { globe.setRealSun(b.dataset.light === "1"); press("light", b.dataset.light!); }));
+  // local solar time at the storm, so it's clear why the real sun can look like the studio light
+  const solarH = (((12 + (meta.eye.lon - subsolar(frame).lon) / 15) % 24) + 24) % 24;
+  const pad = (n: number) => String(Math.floor(n)).padStart(2, "0");
+  const sunHint = `Real sun: lit as at ${hhmm(frame)}. It's about ${pad(solarH)}:${pad((solarH % 1) * 60)} local solar time at the storm, ${
+    solarH >= 6 && solarH < 18 ? "so the storm is in daylight" : "so the storm is in darkness (infrared still sees it)"}.`;
+  document.querySelectorAll<HTMLElement>("[data-light]").forEach((b) => b.addEventListener("click", () => {
+    const on = b.dataset.light === "1";
+    globe.setRealSun(on); press("light", b.dataset.light!);
+    $("sunhint").hidden = !on; $("sunhint").textContent = sunHint;
+  }));
   const exag = $<HTMLInputElement>("exag");
   exag.addEventListener("input", () => { globe.setHeight(Number(exag.value)); $("exagv").textContent = exag.value; });
   const cut = $("cut");

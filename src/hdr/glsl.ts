@@ -79,7 +79,7 @@ export const EARTH = {
 export const CLOUDS = {
   vertex: SPHERE_VERTEX,
   fragment: /* glsl */ `
-    uniform sampler2D ir, live; uniform vec3 sunDir, eye, east, north; uniform float palette, patchOn, patchAng;
+    uniform sampler2D ir, live; uniform vec3 sunDir, eye, east, north; uniform float palette, patchOn, patchAng, realSun;
     varying vec2 vUv; varying vec3 vN; varying vec3 vP;
     ${GLSL_IR}
     void main(){
@@ -92,12 +92,13 @@ export const CLOUDS = {
       float inPatch = (1.0 - smoothstep(0.40, 0.47, max(abs(s), abs(tt)))) * step(0.0, dot(N, eye));
       a *= 1.0 - inPatch * patchOn;
       float ndl = dot(N, L);
-      float lit = smoothstep(-0.25, 0.6, ndl);
+      // studio light wraps softly; the real sun gives a sharp terminator (high tops catch light just past it)
+      float lit = mix(smoothstep(-0.25, 0.6, ndl), smoothstep(-0.05, 0.3, ndl), realSun);
       vec3 base = palette > 0.5 ? mix(vec3(0.92), enhance(bt), isLive) : vec3(0.92);
       vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.9 * mix(vec3(1.0, 0.5, 0.25), vec3(1.0), smoothstep(0.0, 0.4, ndl));
       vec3 col = base * (sunCol * lit + vec3(0.10, 0.13, 0.18));
       // IR sees through the night: keep a cool moonlit read of the cloud tops
-      col += base * vec3(0.30, 0.36, 0.48) * (1.0 - lit) * a;
+      col += base * vec3(0.30, 0.36, 0.48) * mix(1.0, 0.35, realSun) * (1.0 - lit) * a;
       if (palette > 0.5) col += enhance(bt) * smoothstep(-40.0, -70.0, bt - 273.15) * 1.4 * isLive + enhance(bt) * glowOf(bt) * 3.0 * isLive;
       float fres = pow(1.0 - max(dot(N, V), 0.0), 2.0);
       col = mix(col, vec3(0.6, 0.8, 1.0) * lit, fres * 0.25);

@@ -105,6 +105,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     frameMix: { value: 1 },
     exag: { value: 14 },
     cutaway: { value: 0 },
+    realSun: { value: 0 },
   };
 
   // ---------- stars, Earth, clouds, atmosphere ----------
@@ -250,6 +251,8 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       controls.target.copy(fly.t0).lerp(fly.t1, e);
       if (k >= 1) fly = null;
     }
+    // zoomed in, a drag orbits the storm; scroll out and the pivot slides to the Earth's centre so the globe spins
+    if (mode > 0 && !fly) controls.target.copy(eye).multiplyScalar(1 - THREE.MathUtils.smoothstep(camera.position.length(), 1.5, 2.4));
     controls.update();
     // studio light: a key light from upper left, slightly behind the viewer; real sun: the subsolar point at frame time
     if (!realSun) {
@@ -257,6 +260,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       uni.sunDir.value.copy(right).multiplyScalar(-0.55).addScaledVector(upv, 0.45).addScaledVector(fwd, 0.55).normalize();
       if (mode > 0) uni.sunDir.value.lerp(eye.clone().addScaledVector(right, -0.7).addScaledVector(upv, 0.4).normalize(), 0.6).normalize();
     } else uni.sunDir.value.copy(SUN_REAL);
+    uni.realSun.value = realSun ? 1 : 0;
     const s = 1 + 0.35 * Math.sin(uni.time.value * 2.4);
     pulse.scale.setScalar(s); pulseMat.opacity = 0.9 - (s - 1) * 1.6;
     for (const fn of listeners) fn(mode, dt);
@@ -278,7 +282,14 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       flyTo(v.pos, v.target);
     },
     setPalette(on) { uni.palette.value = on ? 1 : 0; },
-    setRealSun(on) { realSun = on; },
+    setRealSun(on) {
+      realSun = on;
+      if (on && mode === 0) {
+        // turn toward the nearest terminator so the night side is in view
+        const t = eye.clone().addScaledVector(SUN_REAL, -eye.dot(SUN_REAL)).normalize();
+        flyTo(eye.clone().addScaledVector(t, 1.4).normalize().multiplyScalar(camera.position.length()), new THREE.Vector3());
+      }
+    },
     setHeight(exag) { uni.exag.value = exag; setBox(); },
     setCutaway(on) { uni.cutaway.value = on ? 1 : 0; },
     setLoop(t) {
