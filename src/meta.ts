@@ -19,6 +19,8 @@ export interface Storm {
   track: [string, number, number, number][];
   /** True when the pipeline cut a 1 km true-colour close-up (storm_vis.jpg) from a daylight frame. */
   visible?: boolean;
+  /** Number of true-colour loop frames (loop/vNN.jpg), one per infrared loop frame, when the whole loop was daylit. */
+  visLoop?: number;
   /** Folder of its close-up and loop, relative to the site root. */
   dir: string;
 }

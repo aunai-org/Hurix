@@ -54,7 +54,7 @@ export function bindControls(globe: Globe, meta: Meta) {
   const hints = () => [
     `Infrared at 10.4 µm from three geostationary satellites, stitched at ${hhmm(frame)} ${dayStr(frame)}. Colder tops are higher.`,
     `The real 2 km ${st.satellite} frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to orbit the storm; scroll out to spin the globe.`,
-    "Volumetric cloud built from the same frame. Tracers show the modelled wind: inflow near the sea, outflow aloft. Cutaway opens a quarter of the storm; its walls show modelled wind speed, from blue (light) to red and magenta at the eyewall.",
+    "Volumetric cloud built from the same frame. Tracers show the modelled wind: inflow near the sea, outflow aloft.",
   ];
   const press = (attr: string, v: string) =>
     document.querySelectorAll<HTMLElement>(`[data-${attr}]`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[attr] === v)));
@@ -65,7 +65,6 @@ export function bindControls(globe: Globe, meta: Meta) {
     press("mode", String(m));
     globe.setMode(m);
     $("exagwrap").hidden = m === 0;
-    $("cutwrap").hidden = m !== 2;
     $("modehint").textContent = hints()[m];
   };
   document.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(Number(b.dataset.mode) as Mode)));
@@ -106,8 +105,6 @@ export function bindControls(globe: Globe, meta: Meta) {
   exag.addEventListener("input", () => { globe.setHeight(Number(exag.value)); $("exagv").textContent = exag.value; });
   const track = $("track");
   track.addEventListener("click", () => { const on = track.getAttribute("aria-pressed") !== "true"; globe.setTrack(on); track.setAttribute("aria-pressed", String(on)); });
-  const cut = $("cut");
-  cut.addEventListener("click", () => { const on = cut.getAttribute("aria-pressed") !== "true"; globe.setCutaway(on); cut.setAttribute("aria-pressed", String(on)); });
 
   // 3-hour loop at 10-minute steps; paused shows the latest frame at full resolution
   let playing = false, loopT = st.loopFrames - 1;

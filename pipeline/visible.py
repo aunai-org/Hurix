@@ -7,6 +7,8 @@ it out where the sun was low or down at the frame time and shows infrared there 
 Himawari-9 has real blue, green and red bands (1, 2, 3). GOES has blue and red (1, 2) plus a near-infrared "veggie" band
 (3); its green is synthesised from the three the way CIMSS does it.
 
+It also cuts a true-colour frame (1024 px) for each infrared loop frame, loop/vNN.jpg, so the loop plays in true colour.
+
 Usage: FRAME=YYYY-MM-DDTHH:MM python3 visible.py OUT_DIR      (after storms.py has written OUT_DIR/meta.json)
 """
 import json, os, sys
@@ -149,6 +151,20 @@ def main():
         Image.fromarray(img).save(os.path.join(out, "storms", st["id"], "storm_vis.jpg"), quality=88)
         st["visible"] = True
         print(st["id"], f"visible: {day:.0%} of the close-up in daylight")
+        # the loop in true colour, frame for frame with the infrared loop; any frame that fails ends it (the page falls
+        # back to infrared for the loop)
+        st.pop("visLoop", None)
+        n = 0
+        for i, t in enumerate(st.get("loopTimes", [])):
+            try:
+                im, _ = true_colour(sat, datetime.strptime(t, "%Y-%m-%dT%H:%MZ"), st["eye"]["lat"], st["eye"]["lon"])
+            except (FileNotFoundError, OSError) as e:
+                print("  loop stop", t, e); break
+            Image.fromarray(im).resize((1024, 1024), Image.LANCZOS).save(os.path.join(out, "storms", st["id"], "loop", f"v{i:02d}.jpg"), quality=88)
+            n += 1
+        if n == len(st.get("loopTimes", [])) and n > 1:
+            st["visLoop"] = n
+        print(st["id"], f"true-colour loop: {n} frames")
     json.dump(meta, open(path, "w"))
 
 

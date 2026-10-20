@@ -2,7 +2,7 @@
 
 **Tropical cyclones on a 3D globe, from real satellite imagery.**
 
-![Imagery view: live infrared over the West Pacific, with a super typhoon east of the Philippines](docs/media/imagery.png)
+![Imagery view: the satellite's true-colour picture of a typhoon east of the Philippines, draped on the globe](docs/media/imagery.png)
 
 Hurix shows the live infrared view of the Earth from three geostationary satellites (Himawari-9, GOES-18 and GOES-19), stitched into one cloud layer over a Blue Marble globe. It finds the active tropical cyclones, tracks each one back up to 48 hours, and lets you pick a storm and switch it into 3D.
 
@@ -10,12 +10,13 @@ Hurix shows the live infrared view of the Earth from three geostationary satelli
 | --- | --- |
 | **Imagery** | The stitched 10.4 µm infrared on the globe, with the eye track. Around the selected storm, its own sharper close-up is draped on top: a 1 km true-colour picture from the visible channels when it was daylight, otherwise its 2 km infrared. |
 | **3D cloud tops** | The storm's own 2 km frame, each pixel lifted to the height its temperature implies (about 6.3 K per km). |
-| **3D storm** | A volumetric cloud built from the same frame, with wind tracers from a Holland wind profile and a wind-speed cutaway. |
+| **3D storm** | A volumetric cloud built from the same frame, with wind tracers from a Holland wind profile. |
 
-![3D cloud tops](docs/media/cloud-tops.png)
-![3D storm](docs/media/storm.png)
+![3D cloud tops: each pixel lifted to its cloud-top height](docs/media/cloud-tops.png)
+![3D storm: a volumetric cloud with wind tracers](docs/media/storm.png)
+![On a phone: the storm card and legend are drawers on the right edge](docs/media/phone.png)
 
-Three imagery styles: **Visible** (true colour, infrared in grey where there's no daylight picture), **Infra** (infrared coloured by cloud-top temperature, grey down to −30 °C, then blue through deep red at −75 °C) and **Blue** (infrared clouds over a blue sea). A 3-hour loop at 10-minute steps plays the real frames (in infrared; the true-colour picture is a single still). Lighting can follow the real sun at the frame time, or a studio key light.
+Three imagery styles: **Visible** (true colour, infrared in grey where there's no daylight picture), **Infra** (infrared coloured by cloud-top temperature, grey down to −30 °C, then blue through deep red at −75 °C) and **Blue** (infrared clouds over a blue sea). A 3-hour loop at 10-minute steps plays the real frames, in true colour when the whole loop was in daylight and in infrared otherwise. Lighting can follow the real sun at the frame time, or a studio key light.
 
 ## Honesty
 

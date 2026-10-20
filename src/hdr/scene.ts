@@ -28,7 +28,6 @@ export interface Globe {
   setStyle(s: Style): void;
   setRealSun(on: boolean): void;
   setHeight(exag: number): void;
-  setCutaway(on: boolean): void;
   setTrack(on: boolean): void;
   /** Loop position in frames, or null for the latest full-quality frame. */
   setLoop(t: number | null): void;
@@ -85,7 +84,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     live: tex("data/ir_live_mask.png", false),
   };
   // each storm's close-up and loop, loaded the first time it is selected
-  const stormTex = new Map<string, { still: THREE.Texture; loop: THREE.Texture[]; vis: THREE.Texture | null }>();
+  const stormTex = new Map<string, { still: THREE.Texture; loop: THREE.Texture[]; vis: THREE.Texture | null; visLoop: THREE.Texture[] }>();
   const texFor = (s: Storm) => {
     let t = stormTex.get(s.id);
     if (!t) {
@@ -94,6 +93,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
         still: clamp(tex(`${s.dir}storm_ir.png`, false)),
         loop: Array.from({ length: s.loopFrames }, (_, i) => clamp(tex(`${s.dir}loop/f${String(i).padStart(2, "0")}.jpg`, false))),
         vis: s.visible ? clamp(tex(`${s.dir}storm_vis.jpg`, true)) : null,
+        visLoop: Array.from({ length: s.visible ? s.visLoop ?? 0 : 0 }, (_, i) => clamp(tex(`${s.dir}loop/v${String(i).padStart(2, "0")}.jpg`, true))),
       };
       stormTex.set(s.id, t);
     }
@@ -108,6 +108,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     sunDir: { value: new THREE.Vector3(1, 0, 0) },
     style: { value: 0 },
     vis: { value: first.vis ?? first.still },
+    visB: { value: first.vis ?? first.still },
     visOn: { value: 0 },
     sunReal: { value: SUN_REAL },
     time: { value: 0 },
@@ -120,7 +121,6 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     frameB: { value: first.still },
     frameMix: { value: 1 },
     exag: { value: 14 },
-    cutaway: { value: 0 },
     realSun: { value: 0 },
     rmw: { value: 30 },
     vmax: { value: 100 },
@@ -252,12 +252,12 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     uni.vmax.value = dvorak(st.eyeK, st.ringK).kt;
     const t = texFor(st);
     uni.frameA.value = t.loop[t.loop.length - 1] ?? t.still; uni.frameB.value = t.still; uni.frameMix.value = 1;
-    uni.vis.value = t.vis ?? t.still;
+    uni.vis.value = uni.visB.value = t.vis ?? t.still;
     syncVis();
     if (mode > 0) orbitAxis(eye);
   };
-  // true colour is a single still, so the loop plays in infrared
-  function syncVis() { uni.visOn.value = style === 0 && !playing && texFor(storms[cur]).vis ? 1 : 0; }
+  // the loop plays in true colour when the pipeline cut one; otherwise it plays in infrared
+  function syncVis() { const t = texFor(storms[cur]); uni.visOn.value = style === 0 && t.vis && (!playing || t.visLoop.length > 1) ? 1 : 0; }
   useStorm(0);
 
   // ---------- camera moves ----------
@@ -361,18 +361,18 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       }
     },
     setHeight(exag) { uni.exag.value = exag; setBox(); },
-    setCutaway(on) {
-      uni.cutaway.value = on ? 1 : 0;
-      // look into the open quarter from the south-east, low enough to see the walls
-      if (on && mode === 2) flyTo(eye.clone().multiplyScalar(1.2).addScaledVector(east, 0.17).addScaledVector(north, -0.24), eye.clone(), 1400);
-    },
     setTrack(on) { showTrack = on; trackGroup.visible = mode === 0 && on; },
     setLoop(t) {
-      const { still, loop } = texFor(storms[cur]), n = loop.length;
+      const { still, loop, vis, visLoop } = texFor(storms[cur]), n = loop.length;
       if (playing !== (t !== null)) { playing = t !== null; syncVis(); }
-      if (t === null || n < 2) { uni.frameA.value = loop[n - 1] ?? still; uni.frameB.value = still; uni.frameMix.value = 1; return; }
-      const i = Math.floor(t) % n;
-      uni.frameA.value = loop[i]; uni.frameB.value = loop[(i + 1) % n]; uni.frameMix.value = t - Math.floor(t);
+      if (t === null || n < 2) {
+        uni.frameA.value = loop[n - 1] ?? still; uni.frameB.value = still; uni.frameMix.value = 1;
+        uni.vis.value = uni.visB.value = vis ?? still;
+        return;
+      }
+      const i = Math.floor(t) % n, j = (i + 1) % n;
+      uni.frameA.value = loop[i]; uni.frameB.value = loop[j]; uni.frameMix.value = t - Math.floor(t);
+      if (visLoop.length === n) { uni.vis.value = visLoop[i]; uni.visB.value = visLoop[j]; }
     },
     onFrame(fn) { listeners.push(fn); },
   };

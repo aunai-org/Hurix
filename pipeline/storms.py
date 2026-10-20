@@ -333,8 +333,8 @@ def main():
                 im = closeup(s["sat"], when, eye["lat"], eye["lon"])
             except (FileNotFoundError, OSError) as e:
                 print("  loop skip", when, e); continue
-            Image.fromarray((code(np.nan_to_num(im, nan=290.0)) * 255 + 0.5).astype(np.uint8)).resize((768, 768), Image.LANCZOS) \
-                .save(os.path.join(folder, "loop", f"f{n:02d}.jpg"), quality=90)
+            Image.fromarray((code(np.nan_to_num(im, nan=290.0)) * 255 + 0.5).astype(np.uint8)) \
+                .save(os.path.join(folder, "loop", f"f{n:02d}.jpg"), quality=94)
             n += 1; times.append(when.strftime("%Y-%m-%dT%H:%MZ"))
         meta_storms.append({
             "id": sid, "satellite": SAT_NAMES[s["sat"]], "eye": {"lat": eye["lat"], "lon": eye["lon"]},
