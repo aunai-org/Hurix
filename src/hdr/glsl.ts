@@ -251,8 +251,10 @@ export const VOLUME = {
     uniform vec3 eye, east, north; uniform float patchAng, rmw;
     uniform mat4 modelMatrix; varying vec3 vW;
     ${GLSL_IR}
-    vec3 visAt(vec2 uv){ return mix(texture2D(vis, uv).rgb, texture2D(visB, uv).rgb, frameMix); }
-    float codeAt(vec2 uv){ return mix(texture2D(frameA, uv).r, texture2D(frameB, uv).r, frameMix); }
+    // explicit level 0: these are read inside a loop with early exits, where the GPU can't work out a mip level by itself
+    // (on real GPUs that gave a blurred, cloudless frame; software renderers happened to cope)
+    vec3 visAt(vec2 uv){ return mix(textureLod(vis, uv, 0.0).rgb, textureLod(visB, uv, 0.0).rgb, frameMix); }
+    float codeAt(vec2 uv){ return mix(textureLod(frameA, uv, 0.0).r, textureLod(frameB, uv, 0.0).r, frameMix); }
     float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
     float noise(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
       return mix(mix(mix(hash(i), hash(i+vec3(1,0,0)), f.x), mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)), f.x), f.y),
