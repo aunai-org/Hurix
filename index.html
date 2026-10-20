@@ -20,19 +20,23 @@
     <section class="card panel" aria-label="Selected storm">
       <div class="eyebrow">Tropical cyclone · from satellite only</div>
       <h1 id="card-title">…</h1>
-      <dl class="grid">
-        <dt>Eye fix</dt><dd id="fix">…</dd>
-        <dt>Moving</dt><dd id="motion">…</dd>
-        <dt>Eye</dt><dd id="eyed">…</dd>
-        <dt>Eyewall tops</dt><dd id="tops">…</dd>
-        <dt>Cloud shield</dt><dd id="cdo">…</dd>
-        <dt>Intensity</dt><dd class="est" id="vmax">…</dd>
-      </dl>
-      <div class="sep"></div>
-      <dl class="grid more">
-        <dt>Track</dt><dd id="trackinfo">…</dd>
-        <dt>Name</dt><dd><small>Needs the JTWC feed, which isn't wired in yet</small></dd>
-      </dl>
+      <button type="button" class="card-toggle" id="cardtoggle" aria-expanded="true" aria-controls="cardbody" aria-label="Hide storm details"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      <p class="peek" id="peek"></p>
+      <div id="cardbody">
+        <dl class="grid">
+          <dt>Eye fix</dt><dd id="fix">…</dd>
+          <dt>Moving</dt><dd id="motion">…</dd>
+          <dt>Eye</dt><dd id="eyed">…</dd>
+          <dt>Eyewall tops</dt><dd id="tops">…</dd>
+          <dt>Cloud shield</dt><dd id="cdo">…</dd>
+          <dt>Intensity</dt><dd class="est" id="vmax">…</dd>
+        </dl>
+        <div class="sep"></div>
+        <dl class="grid more">
+          <dt>Track</dt><dd id="trackinfo">…</dd>
+          <dt>Name</dt><dd><small>Needs the JTWC feed, which isn't wired in yet</small></dd>
+        </dl>
+      </div>
     </section>
 
     <aside class="legend panel" aria-label="Legend">

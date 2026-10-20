@@ -25,6 +25,7 @@ export function fillCard(meta: Meta) {
   $("cdo").textContent = `≈ ${meta.cdoRadiusKm} km radius below −63 °C`;
   const tr = meta.track, span = tr.length > 1 ? Math.round((Date.parse(tr[tr.length - 1][0]) - Date.parse(tr[0][0])) / 36e5) : 0;
   $("trackinfo").textContent = `${span} h of fixes from Himawari-9, every 3 h`;
+  $("peek").textContent = `≈ ${dv.kt} kt (unofficial) · ${POINTS[Math.round(meta.motion.bearing / 22.5) % 16]} at ${Math.round(meta.motion.kt)} kt`;
   html("vmax", `≈ ${dv.kt} kt (T${dv.t.toFixed(1)})<br><small>rough Dvorak-style IR estimate, not official</small>`);
 }
 
@@ -92,6 +93,16 @@ export function bindControls(globe: Globe, meta: Meta) {
       if (show) els[i].style.transform = `translate(${((tmp.x + 1) / 2) * w + l.dx}px, ${((1 - tmp.y) / 2) * h + l.dy}px)`;
     });
   });
+
+  // on phones the card starts folded to one line so the globe stays visible
+  const card = document.querySelector<HTMLElement>(".card")!, toggle = $("cardtoggle");
+  const fold = (folded: boolean) => {
+    card.dataset.collapsed = String(folded);
+    toggle.setAttribute("aria-expanded", String(!folded));
+    toggle.setAttribute("aria-label", folded ? "Show storm details" : "Hide storm details");
+  };
+  fold(matchMedia("(max-width: 900px)").matches);
+  toggle.addEventListener("click", () => fold(card.dataset.collapsed !== "true"));
 
   setMode(0);
 }

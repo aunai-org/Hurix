@@ -210,7 +210,11 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     fly = { p0: camera.position.clone(), p1: pos, t0: controls.target.clone(), t1: target, start: performance.now(), ms: reduceMotion ? 1 : ms };
   };
   const viewFor = (m: Mode) => {
-    if (m === 0) return { pos: ll2v(meta.eye.lat + 4, meta.eye.lon + 4, 4.3), target: new THREE.Vector3() };
+    if (m === 0) {
+      // keep the whole disc in view on narrow portrait screens
+      const h = Math.atan(Math.tan(16 * D2R) * Math.min(innerWidth / innerHeight, 1));
+      return { pos: ll2v(meta.eye.lat + 4, meta.eye.lon + 4, Math.min(7.5, Math.max(4.3, 0.9 / Math.sin(h)))), target: new THREE.Vector3() };
+    }
     const back = eye.clone().multiplyScalar(0.62).addScaledVector(north, -0.34).addScaledVector(east, 0.1);
     return { pos: eye.clone().add(back), target: eye.clone() };
   };

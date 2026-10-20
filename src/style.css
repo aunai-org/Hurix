@@ -54,9 +54,24 @@ body { margin: 0; background: var(--space); color: var(--ink); font: 13px/1.45 v
 #loading div { display: flex; flex-direction: column; gap: 10px; align-items: center; color: var(--muted); }
 #loading progress { width: 220px; accent-color: var(--accent); }
 .hint { color: var(--muted); font-size: 11px; }
+.label { z-index: 1; }
+.panel { z-index: 2; }
+.card { box-sizing: border-box; }
+.card-toggle { display: none; }
+#cardbody { display: flex; flex-direction: column; gap: 10px; }
+.peek { display: none; margin: 0; color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) {
   .legend { display: none; }
-  .card { width: auto; right: max(16px, env(safe-area-inset-right, 0px)); top: auto; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); padding: 12px 14px; gap: 6px; }
+  .card { width: auto; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(70px + env(safe-area-inset-top, 0px)); bottom: auto; padding: 10px 14px; gap: 6px; }
+  .card .eyebrow { display: none; }
+  .card h1 { font-size: 15px; padding-right: 36px; }
+  .card-toggle { display: grid; place-items: center; position: absolute; top: 2px; right: 2px; width: 44px; height: 44px; border: 0; background: none; color: var(--ink); cursor: pointer; border-radius: 12px; }
+  .card-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+  .card-toggle svg { transition: transform .2s; }
+  .card[data-collapsed="true"] .card-toggle svg { transform: rotate(-90deg); }
+  .card[data-collapsed="true"] #cardbody { display: none; }
+  .card[data-collapsed="true"] .peek { display: block; }
+  #cardbody { display: flex; flex-direction: column; gap: 6px; max-height: 42vh; overflow: auto; }
   .card .more { display: none; }
   .seg button { padding: 0 10px; }
 }
