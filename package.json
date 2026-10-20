@@ -1,8 +1,8 @@
 {
-  "name": "earth-template",
+  "name": "hurix",
   "version": "0.1.0",
   "private": true,
-  "description": "A dark, interactive Earth with a space backdrop, sound, and cards. Bring your own data.",
+  "description": "Tropical cyclones on a 3D globe, from live infrared satellite imagery, with 3D cloud-top and volumetric storm views.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -10,19 +10,14 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "notices": "node scripts/notices.mjs",
-    "media": "node scripts/capture-media.mjs"
+    "data": "sh pipeline/run.sh"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",
-    "d3-geo": "^3.1.1",
-    "three": "^0.186.0",
-    "topojson-client": "^3.1.0",
-    "world-atlas": "^2.0.2"
+    "three": "^0.186.0"
   },
   "devDependencies": {
-    "@types/d3-geo": "^3.1.0",
     "@types/three": "^0.186.0",
-    "@types/topojson-client": "^3.1.5",
     "typescript": "^5.9.2",
     "vite": "^7.1.0"
   }

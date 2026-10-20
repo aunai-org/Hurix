@@ -2,103 +2,74 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="theme-color" content="#000000">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <title>Earth Template</title>
-    <meta name="description" content="A dark, interactive Earth with a space backdrop. Bring your own data.">
+    <title>Hurix</title>
+    <meta name="description" content="Tropical cyclones on a 3D globe, from live infrared satellite imagery.">
     <link rel="stylesheet" href="/src/style.css">
   </head>
   <body>
-    <!-- Wording and the logo are filled from src/config.ts and src/logo.ts when the app starts. -->
-    <div id="app" data-state="loading">
-      <div class="boot" role="status" aria-live="polite"><span class="logo-slot"></span><span id="boot-name"></span><small id="boot-msg"></small></div>
-      <div id="globe"></div>
+    <canvas id="gl" aria-label="3D globe with live infrared satellite imagery and a tropical cyclone"></canvas>
 
-      <header class="topbar">
-        <div class="brand">
-          <p class="wordmark"><span class="logo-slot"></span><span id="brand-name"></span></p>
-          <p class="tagline" id="tagline"></p>
-        </div>
-        <div class="topbar-right">
-          <span id="demo-badge" class="demo-badge" hidden></span>
-          <span id="clock" class="clock"></span>
-          <button id="about-btn" class="icon-btn" type="button" aria-expanded="false" aria-controls="about">
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".9" fill="currentColor"/></svg>
-          </button>
-          <button id="sound" class="icon-btn" type="button" aria-pressed="false" aria-label="Sound off" title="Sound off">
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2.5 6h2.5l3.5-3v10L5 10H2.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path class="wave" d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.8a6 6 0 0 1 0 8.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path class="mute" d="M11 6l3.5 4M14.5 6L11 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          </button>
-          <button id="refresh" class="icon-btn" type="button">
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89M13.5 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
-      </header>
-
-      <!-- The card: opens when something is selected. Its rows come from the data. -->
-      <section class="card" id="card" hidden>
-        <button id="card-close" class="close" type="button" aria-label="Close">×</button>
-        <p class="eyebrow" id="card-id"></p>
-        <h1 id="card-name">—</h1>
-        <p class="accent-line" id="card-when"></p>
-        <p class="prompt" id="card-sub"></p>
-        <dl class="facts" id="card-body"></dl>
-      </section>
-
-      <details class="panel filters" open>
-        <summary>Filters</summary>
-        <input id="search" type="search" autocomplete="off">
-        <div class="seg" id="window" role="group" aria-label="Recent window">
-          <button id="win-all" type="button" class="on" aria-pressed="true"><span>All</span><b id="count-all">0</b></button>
-          <button id="recent" type="button" aria-pressed="false"><span id="recent-label"></span><b id="count-recent">0</b></button>
-        </div>
-        <p class="group-label">Show</p>
-        <div class="legend" role="group" aria-label="Categories">
-          <button type="button" data-cat="hub" class="on" aria-pressed="true">
-            <svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 .8 10.5 3.4v5.2L6 11.2 1.5 8.6V3.4Z" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="4.3" r="1.1" fill="currentColor"/><circle cx="4.2" cy="7.4" r="1.1" fill="currentColor"/><circle cx="7.8" cy="7.4" r="1.1" fill="currentColor"/></svg>
-            <span id="lbl-hub"></span><b id="count-hub">0</b>
-          </button>
-          <button type="button" data-cat="item" class="on" aria-pressed="true">
-            <svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.2 10.8 6 6 10.8 1.2 6Z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-            <span id="lbl-item"></span><b id="count-item">0</b>
-          </button>
-          <button type="button" data-cat="node" class="node" aria-pressed="false" id="cat-node">
-            <svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="6" r="1.4" fill="currentColor"/></svg>
-            <span id="lbl-node"></span><b id="count-node">0</b>
-          </button>
-          <button type="button" data-cat="pulse" class="on pulse" aria-pressed="true">
-            <svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.8" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-            <span id="lbl-pulse"></span><b id="count-pulse">0</b>
-          </button>
-        </div>
-        <p class="meta" id="status"></p>
-      </details>
-
-      <details class="panel latest" open>
-        <summary>Latest <small id="latest-window"></small><b id="latest-count">0</b></summary>
-        <ol id="latest"></ol>
-      </details>
-
-      <section class="about" id="about" hidden aria-labelledby="about-title">
-        <button id="about-close" class="close" type="button" aria-label="Close">×</button>
-        <p class="eyebrow">ABOUT</p>
-        <h2 id="about-title"></h2>
-        <p id="about-blurb"></p>
-        <dl class="facts" id="about-rows"></dl>
-        <p class="disclaimer" id="about-disclaimer"></p>
-      </section>
-
-      <footer class="hint">
-        <span class="key" aria-label="Legend">
-          <span><svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 .8 10.5 3.4v5.2L6 11.2 1.5 8.6V3.4Z" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="4.3" r="1.1" fill="currentColor"/><circle cx="4.2" cy="7.4" r="1.1" fill="currentColor"/><circle cx="7.8" cy="7.4" r="1.1" fill="currentColor"/></svg><span id="key-hub"></span></span>
-          <span><svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.2 10.8 6 6 10.8 1.2 6Z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span id="key-item"></span></span>
-          <span class="node"><svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="6" r="1.4" fill="currentColor"/></svg><span id="key-node"></span></span>
-          <span class="arc"><svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 9.5C3 1.5 9 1.5 11 9.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg><span id="key-arc"></span></span>
-        </span>
-        <span class="how">Drag to rotate · Scroll to zoom</span>
-        <span class="credit" id="credit"></span>
-      </footer>
+    <div class="brand">
+      <b>HURIX</b>
+      <span><span class="live"><i></i>LIVE IR</span> · Himawari-9 · GOES-18 · GOES-19</span>
     </div>
+
+    <section class="card panel" aria-label="Selected storm">
+      <div class="eyebrow">Tropical cyclone · from satellite only</div>
+      <h1 id="card-title">…</h1>
+      <dl class="grid">
+        <dt>Eye fix</dt><dd id="fix">…</dd>
+        <dt>Moving</dt><dd id="motion">…</dd>
+        <dt>Eye</dt><dd id="eyed">…</dd>
+        <dt>Eyewall tops</dt><dd id="tops">…</dd>
+        <dt>Cloud shield</dt><dd id="cdo">…</dd>
+        <dt>Intensity</dt><dd class="est" id="vmax">…</dd>
+      </dl>
+      <div class="sep"></div>
+      <dl class="grid more">
+        <dt>Track</dt><dd>48 h of eye fixes from Himawari-9, every 3 h</dd>
+        <dt>Name</dt><dd><small>Needs the JTWC feed, which isn't wired in yet</small></dd>
+      </dl>
+    </section>
+
+    <aside class="legend panel" aria-label="Legend">
+      <div class="eyebrow">Cloud-top temperature</div>
+      <div class="ramp"></div>
+      <div class="ticks"><span>+20</span><span>−20</span><span>−50</span><span>−70</span><span>−85 °C</span></div>
+      <div class="row"><span class="dot"></span>Eye visible in IR</div>
+      <div class="row"><span class="ring"></span>Centre from cloud mass (no clear eye)</div>
+      <div class="sep"></div>
+      <div class="hint" id="modehint"></div>
+      <div class="hint">Europe, Africa and the Indian Ocean show archival clouds. Meteosat isn't in this feed yet.</div>
+    </aside>
+
+    <div class="bar panel" role="toolbar" aria-label="View controls">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="0" aria-pressed="true">Imagery</button>
+        <button type="button" data-mode="1" aria-pressed="false">3D cloud tops</button>
+        <button type="button" data-mode="2" aria-pressed="false">3D storm</button>
+      </div>
+      <div class="seg" role="group" aria-label="Infrared colours">
+        <button type="button" data-pal="0" aria-pressed="false">Grey</button>
+        <button type="button" data-pal="1" aria-pressed="true">Enhanced</button>
+      </div>
+      <div class="seg" role="group" aria-label="Lighting">
+        <button type="button" data-light="0" aria-pressed="true">Studio</button>
+        <button type="button" data-light="1" aria-pressed="false">Real sun</button>
+      </div>
+      <button type="button" class="icon" id="play" aria-label="Play the 3-hour loop" title="Play the 3-hour loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playicon" d="M7 4.5v15l12-7.5z"></path></svg></button>
+      <div class="time" id="time">…</div>
+      <label class="slider" id="exagwrap" for="exag">Height ×<span id="exagv">14</span><input id="exag" type="range" min="4" max="40" value="14"></label>
+      <div class="seg" role="group" aria-label="Cutaway" id="cutwrap">
+        <button type="button" id="cut" aria-pressed="false">Cutaway</button>
+      </div>
+    </div>
+
+    <div id="labels" aria-hidden="true"></div>
+    <div id="loading" role="status"><div><span id="loading-msg">Loading the latest satellite frames</span><progress id="prog" max="1" value="0"></progress></div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

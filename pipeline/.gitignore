@@ -1,0 +1,7 @@
+# downloads and intermediate files
+*.nc
+*.npz
+hima/
+frames/
+cache/
+track.json

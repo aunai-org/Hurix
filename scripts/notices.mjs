@@ -7,11 +7,7 @@ const rule = "=".repeat(72);
 
 // [package, what it is used for]. Add a line here when you bundle another library.
 const bundled = [
-  ["three", "3D globe and sky rendering"],
-  ["d3-geo", "map projection for the globe texture"],
-  ["d3-array", "used by d3-geo"],
-  ["topojson-client", "decoding the country outlines"],
-  ["world-atlas", "country outlines, derived from Natural Earth (public domain)"],
+  ["three", "3D globe, post-processing and storm rendering"],
   ["@fontsource/ibm-plex-mono", "IBM Plex Mono font files"],
 ];
 
@@ -28,7 +24,6 @@ const parts = [
 
 ${app.name} (${app.license}) bundles or redistributes the works below.
 Each is used under its own licence, reproduced here as that licence requires.
-If you replace the sample data with data from a source that has its own licence, add its notice here too.
 `,
 ];
 for (const [name, use] of bundled) {
@@ -36,7 +31,10 @@ for (const [name, use] of bundled) {
   parts.push(`${rule}\n${name} ${l.version}\nLicense: ${l.license} · Used for: ${use}\n${rule}\n\n${l.text}\n`);
 }
 parts.push(
-  `${rule}\nNatural Earth\nSource: https://www.naturalearthdata.com · License: public domain\n${rule}\n\nMap data from Natural Earth. Free vector and raster map data @ naturalearthdata.com.\nNatural Earth is in the public domain; this credit is given as a courtesy.\n`,
+  `${rule}\nthree-globe 2.45.6 example textures (public/textures)\nLicense: MIT · Used for: Earth day, night, water, topography and star-field textures\n${rule}\n\n` +
+    "The day texture is NASA Blue Marble and the night texture is NASA Black Marble (both public domain).\n\n" +
+    readFileSync("public/textures/LICENSE-three-globe.txt", "utf8").trim() + "\n",
+  `${rule}\nNOAA open data (public/data)\nSource: NOAA Open Data Dissemination on AWS (GOES-18, GOES-19, Himawari-9) · License: public domain\n${rule}\n\nSatellite imagery from NOAA's GOES-R series and from JMA's Himawari-9, redistributed by NOAA.\nThis credit is given as a courtesy.\n`,
 );
 writeFileSync("public/third-party-notices.txt", parts.join("\n"));
-console.log(`public/third-party-notices.txt: ${bundled.length} libraries + Natural Earth`);
+console.log(`public/third-party-notices.txt: ${bundled.length} libraries + textures + NOAA data`);

@@ -1,88 +1,65 @@
-# Earth Template
+# Hurix
 
-**A dark globe, a starry sky, and cards. Bring your own data.**
+**Tropical cyclones on a 3D globe, from real satellite imagery.**
 
-![Selecting a release: arcs draw out from its studio to each festival that screened it](docs/media/arcs.gif)
+![Imagery view: live infrared over the West Pacific, with a super typhoon east of the Philippines](docs/media/imagery.png)
 
-Earth Template is a ready-made interactive Earth for a data set where things sit on a map and connect to each other. It was extracted from Modex, an app that shows the AI model catalog on a globe. The look and feel are done. You supply the data and the wording.
+Hurix shows the live infrared view of the Earth from three geostationary satellites (Himawari-9, GOES-18 and GOES-19), stitched into one cloud layer over a Blue Marble globe. It picks out the strongest storm, tracks its eye back 48 hours, and lets you switch the storm into 3D.
 
-The demo data is entirely fictional: film studios, their releases, and the festivals that screened them. The places are real cities, used only as map positions, and the links (so the arcs) are random. The app shows a "Demo data" badge until you set `demo: false` in `src/config.ts`.
+| View | What it shows |
+| --- | --- |
+| **Imagery** | The stitched 10.4 µm infrared on the globe, with the eye track. Enhanced colours mark the coldest, highest tops. |
+| **3D cloud tops** | The storm's own 2 km frame, each pixel lifted to the height its temperature implies (about 6.3 K per km). |
+| **3D storm** | A volumetric cloud built from the same frame, with wind tracers from a Holland wind profile and a wind-speed cutaway. |
 
-## What's included
+![3D cloud tops](docs/media/cloud-tops.png)
+![3D storm](docs/media/storm.png)
 
-- **The globe.** Dark country tiles with a soft rim of light. Drag to spin, scroll to zoom. Nearby pins group into numbered badges, and one click fans a badge out.
-- **Space.** A faint Milky Way, stars, distant shooting stars, a few drifting asteroids, and satellites circling the globe.
-- **Cards.** Select something and a card opens with rows taken straight from your data. Selecting an item draws arcs to everything it links to, and the legend names what an arc means ("release screened at festival"). You set that wording in `config.link`.
-- **Panels.** Filters and search, a Latest list, an About panel, and a legend that is always on screen.
-- **Sound.** Optional synthesized cues (nothing to download), off until the visitor turns them on.
-- **Phones.** The card becomes a bottom sheet, and the side panels fold away.
-- **Offline.** The last data is saved in the browser, so return visits open at once.
-- **Light.** About 60 fps in testing. It stops drawing when the tab is hidden and calms down for people who ask for reduced motion.
+A 3-hour loop at 10-minute steps plays the real frames. Lighting can follow the real sun at the frame time, or a studio key light.
 
-<table>
-  <tr>
-    <td width="70%"><img src="docs/media/desktop.png" alt="Desktop: a release card on the left, arcs to six festivals, filters bottom left, the Latest list on the right"></td>
-    <td width="30%" align="center"><img src="docs/media/phone.png" alt="Phone: the release card as a bottom sheet under the globe" width="200"></td>
-  </tr>
-</table>
+## Honesty
 
-## Quick start
+- Intensity is a rough Dvorak-style estimate from the eye and eyewall temperatures, and is labelled as unofficial.
+- The storm's name and official advisories need the JTWC or NHC feeds, which aren't wired in yet.
+- Meteosat isn't on NOAA's open buckets, so Europe, Africa and the Indian Ocean show archival clouds. The legend says so.
 
-You'll need Node.js 22 (20.19 or newer also works).
+## Run it
 
-```bash
+```sh
 npm install
-```
-```bash
-npm run dev
-```
-
-Open the address Vite prints, usually <http://localhost:5173>.
-
-## Make it your own
-
-1. **Name and wording.** Edit [`src/config.ts`](src/config.ts): the app name, the tagline, what the three kinds are called, the About text, and how much of the sky to draw.
-2. **Data.** Replace the body of [`data/build.ts`](data/build.ts) so it returns your data. The shape is in [`src/data.ts`](src/data.ts) and is only a few lines.
-3. **Look.** Colours are in [`src/theme.ts`](src/theme.ts) (the 3D scene) and at the top of [`src/style.css`](src/style.css) (the page). Marker shapes are in [`src/icons.ts`](src/icons.ts).
-4. **Media and notices.** `npm run media` recaptures the screenshots and GIF above from your build. `npm run notices` rebuilds the third-party notices.
-
-[docs/CUSTOMIZING.md](docs/CUSTOMIZING.md) covers each of these in detail, with examples.
-
-## The three kinds
-
-Everything on the globe is one of three kinds, so any data with this shape fits:
-
-| Kind | On the globe | Demo data | Modex |
-| --- | --- | --- | --- |
-| **hub** | A pin on the map. Its items fan out around it when selected. | Studio | Lab |
-| **item** | Belongs to a hub. Not a place, so it rings its hub. | Release | Model |
-| **node** | A pin elsewhere, linked to items by arcs. | Festival | Provider |
-
-Other fits: airlines, routes, and airports; museums, exhibitions, and lenders; labs, papers, and universities.
-
-## Project layout
-
-```
-index.html              page structure
-src/config.ts           names, wording, effects   ← start here
-src/data.ts             the shape of your data, and loading it
-src/app.ts              selection, cards, panels, layout
-src/globe.ts            the 3D globe, markers, clustering, arcs
-src/space.ts            the sky, shooting stars, asteroids, satellites, rim glow
-src/sound.ts            the sound cues
-src/icons.ts, theme.ts  marker shapes and colours
-data/build.ts           where your data comes from   ← and here
-data/sample.ts          the demo data
+npm run dev        # http://localhost:5173
+npm run build      # type-check and build the static site into dist/
 ```
 
-## Deploy
+## Refresh the satellite frame
 
-`npm run build` writes a plain folder, `dist/`, that any static host can serve. The build runs `data/build.ts` once and saves the result as `dist/data.json`, so there is no server to run. Rebuild whenever your data changes, or on a schedule (see [docs/CUSTOMIZING.md](docs/CUSTOMIZING.md#keeping-data-fresh)).
+`public/data` holds one baked frame. To replace it with the latest one:
 
-[`public/_headers`](public/_headers) sets strict security headers (Cloudflare Pages and Netlify read it). On other hosts, set the same headers in that host's config.
+```sh
+python3 -m pip install -r pipeline/requirements.txt
+npm run data                          # the slot 40 minutes ago
+sh pipeline/run.sh 2026-10-20T01:10   # or a given 10-minute slot (UTC)
+```
 
-## License
+The pipeline reads NOAA's open data on AWS (no account needed) and writes `public/data`:
 
-Released under the [MIT License](LICENSE).
+- `fetch.sh` downloads GOES-19/18 band 13 and cloud-top height, and the Himawari-9 band 13 tiles.
+- `reproject.py` maps each satellite's disc onto one equirectangular grid, preferring the satellite with the best view and blending the seams.
+- `storm.py` finds the eye (a warm spot ringed by the coldest tops) and tracks it back every 3 hours. When the eye is clouded over it uses the centre of the cold cloud mass, and marks that fix.
+- `export.py` writes the textures, the loop and `meta.json`.
 
-It bundles three.js (MIT), d3-geo, d3-array, topojson-client and world-atlas (ISC), the IBM Plex Mono font (SIL Open Font License), and Natural Earth map data (public domain). Their notices are in [public/third-party-notices.txt](public/third-party-notices.txt), which ships with the site.
+The current pipeline follows one storm in the Himawari-9 view.
+
+## Layout
+
+```
+src/main.ts        start-up
+src/meta.ts        the frame's measurements, formatting, the Dvorak-style estimate, the subsolar point
+src/hdr/scene.ts   three.js scene: HDR pipeline with ACES and bloom, Earth, clouds, atmosphere, track, 3D views
+src/hdr/glsl.ts    shaders
+src/ui.ts          card, legend, controls, loop and labels
+pipeline/          the data refresh
+public/textures/   Earth textures (three-globe examples, MIT; NASA Blue and Black Marble)
+```
+
+Design notes are in `docs/superpowers/specs/`. Licences are in `public/third-party-notices.txt` (`npm run notices` regenerates it).
