@@ -27,6 +27,7 @@ export interface Globe {
   setRealSun(on: boolean): void;
   setHeight(exag: number): void;
   setCutaway(on: boolean): void;
+  setTrack(on: boolean): void;
   /** Loop position in frames, or null for the latest full-quality frame. */
   setLoop(t: number | null): void;
   /** Called every frame after rendering, with the current mode. */
@@ -137,6 +138,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   // ---------- track: eye fixes as dots, cloud-mass fixes as rings ----------
   const amber = (k: number) => new THREE.Color(1.0, 0.62, 0.25).multiplyScalar(k);
   const trackGroup = new THREE.Group();
+  let showTrack = true;
   scene.add(trackGroup);
   const dotGeo = new THREE.SphereGeometry(0.0042, 16, 12), ringGeo = new THREE.TorusGeometry(0.0042, 0.0011, 8, 24);
   const glow = new THREE.MeshBasicMaterial({ color: amber(4) }), tubeMat = new THREE.MeshBasicMaterial({ color: amber(3.2) });
@@ -307,7 +309,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       resize();
       uni.patchOn.value = m > 0 ? 1 : 0;
       patch.visible = m === 1; volBox.visible = m === 2; particles.visible = m === 2;
-      trackGroup.visible = m === 0;
+      trackGroup.visible = m === 0 && showTrack;
       controls.minDistance = m === 0 ? 1.15 : 0.05;
       const v = viewFor(m);
       flyTo(v.pos, v.target);
@@ -323,6 +325,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     },
     setHeight(exag) { uni.exag.value = exag; setBox(); },
     setCutaway(on) { uni.cutaway.value = on ? 1 : 0; },
+    setTrack(on) { showTrack = on; trackGroup.visible = mode === 0 && on; },
     setLoop(t) {
       const { still, loop } = texFor(storms[cur]), n = loop.length;
       if (t === null || n < 2) { uni.frameA.value = loop[n - 1] ?? still; uni.frameB.value = still; uni.frameMix.value = 1; return; }

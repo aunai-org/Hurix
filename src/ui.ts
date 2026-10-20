@@ -85,6 +85,8 @@ export function bindControls(globe: Globe, meta: Meta) {
   }));
   const exag = $<HTMLInputElement>("exag");
   exag.addEventListener("input", () => { globe.setHeight(Number(exag.value)); $("exagv").textContent = exag.value; });
+  const track = $("track");
+  track.addEventListener("click", () => { const on = track.getAttribute("aria-pressed") !== "true"; globe.setTrack(on); track.setAttribute("aria-pressed", String(on)); });
   const cut = $("cut");
   cut.addEventListener("click", () => { const on = cut.getAttribute("aria-pressed") !== "true"; globe.setCutaway(on); cut.setAttribute("aria-pressed", String(on)); });
 
