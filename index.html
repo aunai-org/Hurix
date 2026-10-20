@@ -17,13 +17,17 @@
       <span><span class="live"><i></i>LIVE IR</span> · Himawari-9 · GOES-18 · GOES-19</span>
     </div>
 
-    <section class="card panel" aria-label="Selected storm">
+    <nav class="drawer-tabs" aria-label="Panels">
+      <button type="button" class="drawer-tab" id="cardtoggle" aria-expanded="false" aria-controls="card"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span>Storm</span></button>
+      <button type="button" class="drawer-tab" id="legendtoggle" aria-expanded="false" aria-controls="legend"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span>Legend</span></button>
+    </nav>
+    <div class="drawers">
+    <section class="card panel" id="card" aria-label="Selected storm" data-open="false">
       <div class="seg storm-pick" id="stormpick" role="group" aria-label="Storms" hidden></div>
       <div class="eyebrow" id="card-eyebrow">Tropical cyclone · from satellite only</div>
       <h1 id="card-title">…</h1>
-      <button type="button" class="card-toggle" id="cardtoggle" aria-expanded="true" aria-controls="cardbody" aria-label="Hide storm details"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
       <p class="peek" id="peek"></p>
-      <div id="cardbody" class="fold-body">
+      <div id="cardbody">
         <dl class="grid">
           <dt>Eye fix</dt><dd id="fix">…</dd>
           <dt>Moving</dt><dd id="motion">…</dd>
@@ -40,10 +44,9 @@
       </div>
     </section>
 
-    <aside class="legend panel" aria-label="Legend">
+    <aside class="legend panel" id="legend" aria-label="Legend" data-open="false">
       <div class="eyebrow" id="legend-title">Cloud-top temperature</div>
-      <button type="button" class="card-toggle" id="legendtoggle" aria-expanded="true" aria-controls="legendbody" aria-label="Hide legend"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
-      <div id="legendbody" class="fold-body">
+      <div id="legendbody">
       <div class="ramp" id="ramp"></div>
       <div class="ticks" id="ticks"></div>
       <div class="hint" id="stylehint"></div>
@@ -55,6 +58,7 @@
       <div class="hint">Europe, Africa and the Indian Ocean show archival clouds. Meteosat isn't in this feed yet.</div>
       </div>
     </aside>
+    </div>
 
     <div class="bar panel" role="toolbar" aria-label="View controls">
       <div class="seg" role="group" aria-label="View">
@@ -72,7 +76,7 @@
         <button type="button" data-light="1" aria-pressed="false">Real sun</button>
       </div>
       <div class="seg" role="group" aria-label="Track">
-        <button type="button" id="track" aria-pressed="true" title="Show or hide the storm tracks and eye markers">Track</button>
+        <button type="button" id="track" aria-pressed="false" title="Show or hide the storm tracks and eye markers">Track</button>
       </div>
       <button type="button" class="icon" id="play" aria-label="Play the 3-hour loop" title="Play the 3-hour loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playicon" d="M7 4.5v15l12-7.5z"></path></svg></button>
       <div class="time" id="time">…</div>

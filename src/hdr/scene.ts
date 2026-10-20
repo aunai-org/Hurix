@@ -147,7 +147,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   // ---------- track: eye fixes as dots, cloud-mass fixes as rings ----------
   const amber = (k: number) => new THREE.Color(1.0, 0.62, 0.25).multiplyScalar(k);
   const trackGroup = new THREE.Group();
-  let showTrack = true;
+  let showTrack = false;
   scene.add(trackGroup);
   const dotGeo = new THREE.SphereGeometry(0.0042, 16, 12), ringGeo = new THREE.TorusGeometry(0.0042, 0.0011, 8, 24);
   const glow = new THREE.MeshBasicMaterial({ color: amber(4) }), tubeMat = new THREE.MeshBasicMaterial({ color: amber(3.2) });
@@ -344,7 +344,11 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       }
     },
     setHeight(exag) { uni.exag.value = exag; setBox(); },
-    setCutaway(on) { uni.cutaway.value = on ? 1 : 0; },
+    setCutaway(on) {
+      uni.cutaway.value = on ? 1 : 0;
+      // look into the open quarter from the south-east, low enough to see the walls
+      if (on && mode === 2) flyTo(eye.clone().multiplyScalar(1.2).addScaledVector(east, 0.17).addScaledVector(north, -0.24), eye.clone(), 1400);
+    },
     setTrack(on) { showTrack = on; trackGroup.visible = mode === 0 && on; },
     setLoop(t) {
       const { still, loop } = texFor(storms[cur]), n = loop.length;

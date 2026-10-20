@@ -272,7 +272,17 @@ export const VOLUME = {
       if (cutaway > 0.5 && km.x > 0.0 && km.y < 0.0) d = 0.0;
       return d;
     }
-    vec3 heat(float t){ return clamp(vec3(1.5*t, 1.5*t - 0.4, 0.2*(1.0-t)), 0.0, 1.0); }
+    // wind speed as a fraction of the peak: blue, cyan, green, yellow, red, magenta at the eyewall
+    vec3 speedCol(float v){
+      vec3 c = mix(vec3(0.05, 0.15, 0.6), vec3(0.0, 0.6, 0.9), smoothstep(0.0, 0.25, v));
+      c = mix(c, vec3(0.1, 0.8, 0.25), smoothstep(0.25, 0.45, v));
+      c = mix(c, vec3(1.0, 0.85, 0.1), smoothstep(0.45, 0.65, v));
+      c = mix(c, vec3(1.0, 0.25, 0.05), smoothstep(0.65, 0.85, v));
+      return mix(c, vec3(1.0, 0.2, 0.8), smoothstep(0.88, 1.0, v));
+    }
+    // Holland profile: wind speed as a fraction of the peak, fading at the sea surface and above the outflow
+    float windAt(vec3 km){ float r = length(km.xy), x = pow(rmw / max(r, 1.0), 1.6);
+      return sqrt(x * exp(1.0 - x)) * smoothstep(0.0, 1.2, km.z) * (1.0 - smoothstep(12.0, 17.0, km.z)); }
     void main(){
       mat4 inv = inverse(modelMatrix);
       vec3 ro = (inv * vec4(cameraPosition, 1.0)).xyz;
@@ -288,8 +298,27 @@ export const VOLUME = {
       float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
       vec3 acc = vec3(0.0); float trans = 1.0;
       vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.5, skyCol = vec3(0.22, 0.38, 0.7) * 0.35;
+      // cutaway: the south-east quarter is removed, and its two walls (east-west and north-south through the eye) are
+      // painted with the modelled wind speed up to the cloud top, hit exactly rather than by the march
+      float tw = 1e9; vec3 wallCol = vec3(0.0); float wallA = 0.0;
+      if (cutaway > 0.5) {
+        float tA = -ro.x / rd.x, tB = -ro.y / rd.y;
+        vec3 pA = ro + rd * tA, pB = ro + rd * tB;
+        if (tA > tn && tA < tf && pA.y < 0.0 && pA.y > -0.97) tw = tA;
+        if (tB > tn && tB < tf && pB.x > 0.0 && pB.x < 0.97 && tB < tw) tw = tB;
+        if (tw < 1e8) {
+          vec3 km = kmOf((modelMatrix * vec4(ro + rd * tw, 1.0)).xyz);
+          float bt = btOf(codeAt(km.xy / 2048.0 + 0.5));
+          float top = max(topKm(bt), 0.0);
+          float inside = smoothstep(top + 0.3, top - 0.6, km.z) * step(0.0, km.z) * (1.0 - smoothstep(800.0, 980.0, length(km.xy)));
+          float v = windAt(km);
+          wallCol = speedCol(v) * (0.25 + 1.6 * v);
+          wallA = inside * mix(0.5, 0.94, smoothstep(0.1, 0.5, v));
+        }
+      }
       for (int i = 0; i < STEPS; i++) {
         float t = tn + (float(i) + jitter) * dt;
+        if (t > tw) { acc += trans * wallA * wallCol; trans *= 1.0 - wallA; tw = 1e9; if (trans < 0.02) break; }
         vec3 w = (modelMatrix * vec4(ro + rd * t, 1.0)).xyz;
         vec3 km = kmOf(w);
         float bt; float d = density(km, bt);
@@ -302,12 +331,6 @@ export const VOLUME = {
           vec3 base = style < 0.5 ? mix(vec3(0.95), clamp(texture2D(vis, uvk).rgb * 1.1, 0.0, 1.0), visOn)
                     : style < 1.5 ? mix(vec3(0.95), infra(bt), smoothstep(11.0, 14.5, km.z)) : blueIR(bt);
           vec3 L = base * (sunCol * lightT * mix(0.6, 1.0, powder) + skyCol);
-          if (cutaway > 0.5) {
-            float r = length(km.xy), x = pow(rmw / max(r, 1.0), 1.6);
-            float v = sqrt(x * exp(1.0 - x)) * smoothstep(0.0, 4.0, km.z) * (1.0 - smoothstep(10.0, 16.0, km.z));
-            float nearCut = 1.0 - smoothstep(0.0, 18.0, min(abs(km.x), abs(km.y)));
-            L += heat(v) * nearCut * 4.0 * v;
-          }
           float segKm = length((modelMatrix * vec4(rd * dt, 0.0)).xyz) * 6371.0;
           float a = 1.0 - exp(-d * 0.09 * segKm);
           acc += trans * a * L;
@@ -315,6 +338,7 @@ export const VOLUME = {
           if (trans < 0.02) break;
         }
       }
+      if (tw < 1e8) { acc += trans * wallA * wallCol; trans *= 1.0 - wallA; }
       if (trans > 0.995) discard;
       gl_FragColor = vec4(acc, 1.0 - trans);
     }`,

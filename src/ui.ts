@@ -54,7 +54,7 @@ export function bindControls(globe: Globe, meta: Meta) {
   const hints = () => [
     `Infrared at 10.4 µm from three geostationary satellites, stitched at ${hhmm(frame)} ${dayStr(frame)}. Colder tops are higher.`,
     `The real 2 km ${st.satellite} frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to orbit the storm; scroll out to spin the globe.`,
-    "Volumetric cloud built from the same frame. Tracers show the modelled wind: inflow near the sea, outflow aloft. Turn on Cutaway for wind speed.",
+    "Volumetric cloud built from the same frame. Tracers show the modelled wind: inflow near the sea, outflow aloft. Cutaway opens a quarter of the storm; its walls show modelled wind speed, from blue (light) to red and magenta at the eyewall.",
   ];
   const press = (attr: string, v: string) =>
     document.querySelectorAll<HTMLElement>(`[data-${attr}]`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[attr] === v)));
@@ -184,19 +184,38 @@ export function bindControls(globe: Globe, meta: Meta) {
     }
   });
 
-  // the card and the legend fold to their title on any screen; on phones the card starts folded so the globe stays visible
-  const foldable = (panel: string, button: string, what: string, folded: boolean) => {
-    const el = document.querySelector<HTMLElement>(panel)!, toggle = $(button);
-    const fold = (f: boolean) => {
-      el.dataset.collapsed = String(f);
-      toggle.setAttribute("aria-expanded", String(!f));
-      toggle.setAttribute("aria-label", `${f ? "Show" : "Hide"} ${what}`);
+  // the card and the legend are drawers: hidden at first, a tab on the right edge slides each in, and each hides itself
+  // again a few seconds after the pointer leaves it (or straight away when you go back to the globe)
+  const drawers: { close: () => void }[] = [["card", "cardtoggle"], ["legend", "legendtoggle"]].map(([id, tab]) => {
+    const el = $(id), btn = $(tab);
+    let timer = 0;
+    const open = () => {
+      clearTimeout(timer); el.removeAttribute("data-closing");
+      el.dataset.open = "true"; btn.setAttribute("aria-expanded", "true");
+      later(6000);
     };
-    fold(folded);
-    toggle.addEventListener("click", () => fold(el.dataset.collapsed !== "true"));
-  };
-  foldable(".card", "cardtoggle", "storm details", matchMedia("(max-width: 900px)").matches);
-  foldable(".legend", "legendtoggle", "legend", false);
+    const close = () => {
+      clearTimeout(timer);
+      if (el.dataset.open !== "true" || el.hasAttribute("data-closing")) return;
+      btn.setAttribute("aria-expanded", "false");
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) { el.dataset.open = "false"; return; }
+      el.setAttribute("data-closing", "");
+      setTimeout(() => { if (el.hasAttribute("data-closing")) { el.removeAttribute("data-closing"); el.dataset.open = "false"; } }, 240);
+    };
+    const later = (ms: number) => { clearTimeout(timer); timer = window.setTimeout(close, ms); };
+    btn.addEventListener("click", () => {
+      if (btn.getAttribute("aria-expanded") === "true") return close();
+      // on a phone there is room for one drawer at a time
+      if (matchMedia("(max-width: 900px)").matches) drawers.forEach((d) => d.close());
+      open();
+    });
+    el.addEventListener("pointerenter", () => clearTimeout(timer));
+    el.addEventListener("pointerleave", () => { if (el.dataset.open === "true") later(2500); });
+    el.addEventListener("focusin", () => clearTimeout(timer));
+    return { close };
+  });
+  canvas.addEventListener("pointerdown", () => drawers.forEach((d) => d.close()));
+  addEventListener("keydown", (e) => { if (e.key === "Escape") drawers.forEach((d) => d.close()); });
 
   fillCard(meta, st);
   press("storm", "0");
