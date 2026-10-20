@@ -54,7 +54,7 @@ export function bindControls(globe: Globe, meta: Meta) {
   const hints = () => [
     `Infrared at 10.4 µm from three geostationary satellites, stitched at ${hhmm(frame)} ${dayStr(frame)}. Colder tops are higher.`,
     `The real 2 km ${st.satellite} frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to orbit the storm; scroll out to spin the globe.`,
-    "Volumetric cloud built from the same frame. Tracers show the modelled wind: inflow near the sea, outflow aloft.",
+    "A 3D cloud built from the same satellite frame: each cloud stands as tall as its top temperature implies.",
   ];
   const press = (attr: string, v: string) =>
     document.querySelectorAll<HTMLElement>(`[data-${attr}]`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[attr] === v)));

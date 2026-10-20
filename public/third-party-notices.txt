@@ -1,6 +1,6 @@
-Third-party notices for hurix
+Third-party notices for hurrix
 
-hurix (MIT) bundles or redistributes the works below.
+hurrix (MIT) bundles or redistributes the works below.
 Each is used under its own licence, reproduced here as that licence requires.
 
 ========================================================================

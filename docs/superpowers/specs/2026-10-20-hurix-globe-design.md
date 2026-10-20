@@ -1,4 +1,4 @@
-# Hurix globe: design
+# Hurrix globe: design
 
 Status: draft for review. Prototype: https://claude.ai/artifact/NtiW18UckQG2V6cTA53ZzL
 

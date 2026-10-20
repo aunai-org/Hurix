@@ -318,31 +318,3 @@ export const VOLUME = {
     }`,
 };
 
-/** Wind tracers from a Holland profile: low-level inflow spiralling in, upper outflow spiralling out. */
-export const WIND = {
-    vertex: /* glsl */ `
-    attribute vec4 seed; uniform float time, exag, rmw, vmax; varying float vSpeed; varying float vFade;
-    void main(){
-      float r0 = seed.x, a0 = seed.y, z = seed.z, outflow = seed.w;
-      float x = pow(rmw / r0, 1.6);
-      float v = sqrt(x * exp(1.0 - x));                  // 0..1 of Vmax
-      float life = fract(time * 0.02 + a0 * 0.159);
-      float r = outflow > 0.5 ? r0 * (0.6 + life * 0.9) : r0 * (1.2 - life * 0.55);
-      float omega = v * vmax * 1.852 / r * 0.9;  // rad per (scaled) hour
-      float a = a0 + (outflow > 0.5 ? -1.0 : 1.0) * omega * time * 0.35;
-      float zz = (z * exag - r * r / 12742.0) / 6371.0;    // follow the curve of the Earth
-      vec3 p = vec3(cos(a) * r / 6371.0, sin(a) * r / 6371.0, zz);
-      vSpeed = outflow > 0.5 ? 0.25 : v; vFade = sin(life * 3.14159);
-      vec4 mv = modelViewMatrix * vec4(p, 1.0);
-      gl_PointSize = (1.0 + 1.8 * v) * (1.6 / -mv.z);
-      gl_Position = projectionMatrix * mv;
-    }`,
-    fragment: /* glsl */ `
-    varying float vSpeed; varying float vFade;
-    void main(){
-      vec2 c = gl_PointCoord - 0.5; float d = dot(c, c); if (d > 0.25) discard;
-      vec3 col = mix(vec3(0.35, 0.7, 1.0), vec3(1.0, 0.85, 0.3), smoothstep(0.35, 0.7, vSpeed));
-      col = mix(col, vec3(1.0, 0.25, 0.15), smoothstep(0.8, 1.0, vSpeed));
-      gl_FragColor = vec4(col * (0.4 + 2.6 * vSpeed) * vFade * (1.0 - d * 4.0) * 0.6, 1.0);
-    }`,
-};

@@ -5,7 +5,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME, WIND } from "./glsl";
+import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME } from "./glsl";
 import { dvorak, frameDate, subsolar, type Meta, type Storm } from "../meta";
 
 export type Mode = 0 | 1 | 2;
@@ -192,7 +192,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   patch.frustumCulled = false; patch.visible = false;
   scene.add(patch);
 
-  // ---------- mode 2: volumetric storm + wind tracers, in a frame tangent at the eye ----------
+  // ---------- mode 2: volumetric storm, in a frame tangent at the eye ----------
   const stormFrame = new THREE.Group();
   stormFrame.matrixAutoUpdate = false;
   scene.add(stormFrame);
@@ -204,26 +204,6 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   volBox.visible = false; volBox.frustumCulled = false; volBox.renderOrder = 10;
   stormFrame.add(volBox);
 
-  const N_P = 7000;
-  const pGeo = new THREE.BufferGeometry();
-  {
-    const seed = new Float32Array(N_P * 4);
-    for (let i = 0; i < N_P; i++) {
-      const out = Math.random() < 0.18;
-      seed[i * 4] = out ? 180 + Math.random() * 520 : 22 + Math.pow(Math.random(), 0.8) * 700; // radius km
-      seed[i * 4 + 1] = Math.random() * Math.PI * 2; // angle
-      seed[i * 4 + 2] = out ? 14 + Math.random() * 2 : 0.3 + Math.random() * 2.5; // height km
-      seed[i * 4 + 3] = out ? 1 : 0;
-    }
-    pGeo.setAttribute("seed", new THREE.BufferAttribute(seed, 4));
-    pGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(N_P * 3), 3));
-  }
-  const particles = new THREE.Points(pGeo, new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    uniforms: uni, vertexShader: WIND.vertex, fragmentShader: WIND.fragment,
-  }));
-  particles.visible = false; particles.frustumCulled = false; particles.renderOrder = 9;
-  stormFrame.add(particles);
 
   const setBox = () => {
     volBox.scale.set(HALF, HALF, (18 * uni.exag.value) / R_KM);
@@ -343,7 +323,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       mode = m;
       resize();
       uni.patchOn.value = 1;
-      imagery.visible = m === 0; patch.visible = m === 1; volBox.visible = m === 2; particles.visible = m === 2;
+      imagery.visible = m === 0; patch.visible = m === 1; volBox.visible = m === 2;
       trackGroup.visible = m === 0 && showTrack;
       controls.minDistance = m === 0 ? 1.07 : 0.05;
       orbitAxis(m === 0 ? Y : eye);
