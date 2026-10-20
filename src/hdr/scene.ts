@@ -5,7 +5,8 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME } from "./glsl";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME, VOLUME_BLEND } from "./glsl";
 import { dvorak, frameDate, subsolar, type Meta, type Storm } from "../meta";
 
 export type Mode = 0 | 1 | 2;
@@ -58,6 +59,14 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
+  // the 3D storm is ray-marched into its own half-size buffer, then softened and laid over the scene: the dither that
+  // hides the march's banding blurs into smooth cloud instead of showing as grain
+  const volScene = new THREE.Scene();
+  const volRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
+  const volBlend = new ShaderPass(VOLUME_BLEND);
+  volBlend.uniforms.tVol.value = volRT.texture;
+  volBlend.enabled = false;
+  composer.addPass(volBlend);
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.5, 3.2);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
@@ -195,7 +204,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   // ---------- mode 2: volumetric storm, in a frame tangent at the eye ----------
   const stormFrame = new THREE.Group();
   stormFrame.matrixAutoUpdate = false;
-  scene.add(stormFrame);
+  volScene.add(stormFrame);
   const HALF = PATCH_KM / 2 / R_KM;
   const volBox = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 1.45).translate(0, 0, 0.275), new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: false, side: THREE.BackSide,
@@ -262,6 +271,9 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     renderer.setPixelRatio(pixelRatio(mode)); composer.setPixelRatio(pixelRatio(mode));
     const w = canvas.clientWidth, h = canvas.clientHeight;
     renderer.setSize(w, h, false); composer.setSize(w, h); bloom.setSize(w, h);
+    const pr = renderer.getPixelRatio();
+    volRT.setSize(Math.max(1, Math.round(w * pr * 0.5)), Math.max(1, Math.round(h * pr * 0.5)));
+    volBlend.uniforms.texel.value.set(1 / volRT.width, 1 / volRT.height);
     camera.aspect = w / h; camera.updateProjectionMatrix();
   }
   addEventListener("resize", resize);
@@ -306,6 +318,12 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     const s = 1 + 0.35 * Math.sin(uni.time.value * 2.4);
     pulses.forEach((p, i) => p.scale.setScalar(i === cur ? s : 0.8)); pulseMat.opacity = 0.9 - (s - 1) * 1.6;
     for (const fn of listeners) fn(mode, dt);
+    volBlend.enabled = mode === 2;
+    if (mode === 2) {
+      const clear = renderer.getClearColor(new THREE.Color()), clearA = renderer.getClearAlpha();
+      renderer.setRenderTarget(volRT); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(volScene, camera);
+      renderer.setRenderTarget(null); renderer.setClearColor(clear, clearA);
+    }
     composer.render();
   }
   requestAnimationFrame(frame);

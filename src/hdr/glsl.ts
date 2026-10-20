@@ -1,4 +1,5 @@
 // Shaders. Every IR texture stores code = (320 K − BT) / 140 K in its red channel.
+import { Vector2 } from "three";
 
 /**
  * Shared helpers: brightness temperature, cloud opacity, cloud-top height, and the three imagery styles.
@@ -289,9 +290,11 @@ export const VOLUME = {
       float tn = max(max(tmin.x, tmin.y), max(tmin.z, 0.0)), tf = min(min(tmax.x, tmax.y), tmax.z);
       if (tf <= tn) discard;
       vec3 Lw = normalize(sunDir);
-      const int STEPS = 72;
+      const int STEPS = 128;
       float dt = (tf - tn) / float(STEPS);
-      float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+      // interleaved gradient noise: the start offset varies smoothly across neighbouring pixels, so the banding it hides
+      // turns into a fine even dither instead of coarse grain
+      float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
       vec3 acc = vec3(0.0); float trans = 1.0;
       vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.5, skyCol = vec3(0.22, 0.38, 0.7) * 0.35;
       for (int i = 0; i < STEPS; i++) {
@@ -320,3 +323,19 @@ export const VOLUME = {
     }`,
 };
 
+/** Lays the half-size 3D storm buffer (premultiplied colour and coverage) over the scene, with a soft 9-tap blur. */
+export const VOLUME_BLEND = {
+  uniforms: { tDiffuse: { value: null }, tVol: { value: null }, texel: { value: new Vector2(1, 1) } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse, tVol; uniform vec2 texel; varying vec2 vUv;
+    void main(){
+      vec4 v = texture2D(tVol, vUv) * 0.25;
+      v += (texture2D(tVol, vUv + vec2(texel.x, 0.0)) + texture2D(tVol, vUv - vec2(texel.x, 0.0))
+          + texture2D(tVol, vUv + vec2(0.0, texel.y)) + texture2D(tVol, vUv - vec2(0.0, texel.y))) * 0.125;
+      v += (texture2D(tVol, vUv + texel) + texture2D(tVol, vUv - texel)
+          + texture2D(tVol, vUv + vec2(texel.x, -texel.y)) + texture2D(tVol, vUv - vec2(texel.x, -texel.y))) * 0.0625;
+      vec4 s = texture2D(tDiffuse, vUv);
+      gl_FragColor = vec4(s.rgb * (1.0 - v.a) + v.rgb, 1.0);
+    }`,
+};
