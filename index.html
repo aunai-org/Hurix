@@ -41,11 +41,12 @@
     </section>
 
     <aside class="legend panel" aria-label="Legend">
-      <div class="eyebrow">Cloud-top temperature</div>
+      <div class="eyebrow" id="legend-title">Cloud-top temperature</div>
       <button type="button" class="card-toggle" id="legendtoggle" aria-expanded="true" aria-controls="legendbody" aria-label="Hide legend"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
       <div id="legendbody" class="fold-body">
-      <div class="ramp"></div>
-      <div class="ticks"><span>+20</span><span>−20</span><span>−50</span><span>−70</span><span>−85 °C</span></div>
+      <div class="ramp" id="ramp"></div>
+      <div class="ticks" id="ticks"></div>
+      <div class="hint" id="stylehint"></div>
       <div class="row"><span class="dot"></span>Eye visible in IR</div>
       <div class="row"><span class="ring"></span>Centre from cloud mass (no clear eye)</div>
       <div class="sep"></div>
@@ -61,9 +62,10 @@
         <button type="button" data-mode="1" aria-pressed="false">3D cloud tops</button>
         <button type="button" data-mode="2" aria-pressed="false">3D storm</button>
       </div>
-      <div class="seg" role="group" aria-label="Infrared colours">
-        <button type="button" data-pal="0" aria-pressed="false" title="Plain infrared: higher, colder cloud tops are brighter">Grey</button>
-        <button type="button" data-pal="1" aria-pressed="true" title="Colours the coldest tops (below about −40 °C), where the strongest thunderstorms are">Enhanced</button>
+      <div class="seg" role="group" aria-label="Imagery style">
+        <button type="button" data-style="0" aria-pressed="true" title="Real true-colour picture from the satellite's visible channels (daylight only); infrared elsewhere">Visible</button>
+        <button type="button" data-style="1" aria-pressed="false" title="Infrared coloured by cloud-top temperature: the colder (higher) the top, the stronger the storm">Infra</button>
+        <button type="button" data-style="2" aria-pressed="false" title="Infrared clouds over a blue sea: cold cores in soft grey, edges bright">Blue</button>
       </div>
       <div class="seg" role="group" aria-label="Lighting">
         <button type="button" data-light="0" aria-pressed="true">Studio</button>

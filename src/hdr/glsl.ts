@@ -1,22 +1,32 @@
 // Shaders. Every IR texture stores code = (320 K − BT) / 140 K in its red channel.
 
-/** Shared helpers: brightness temperature, cloud opacity, cloud-top height, and the enhanced IR palette. */
+/**
+ * Shared helpers: brightness temperature, cloud opacity, cloud-top height, and the three imagery styles.
+ * style 0 = Visible (true colour where a close-up has it, plain IR elsewhere), 1 = Infra, 2 = Blue.
+ */
 export const GLSL_IR = /* glsl */ `
   float btOf(float code) { return 320.0 - code * 140.0; }
   float cloudOf(float bt) { return pow(smoothstep(290.0, 228.0, bt), 0.8); }
   float topKm(float bt) { return clamp((300.0 - bt) / 6.3, 0.0, 17.5) * smoothstep(286.0, 262.0, bt); }
-  vec3 enhance(float bt) {
+  // plain IR: low warm cloud dim grey, high cold tops bright
+  vec3 greyIR(float bt) { return vec3(mix(0.34, 0.8, smoothstep(282.0, 210.0, bt))); }
+  // forecaster IR: grey down to -30 C, then blue, cyan, green, yellow, orange, red and deep red at the coldest tops
+  vec3 infra(float bt) {
     float c = bt - 273.15;
-    vec3 col = vec3(1.0);
-    col = mix(col, vec3(0.55, 0.85, 1.0), smoothstep(-38.0, -45.0, c));
-    col = mix(col, vec3(0.20, 0.42, 1.0), smoothstep(-48.0, -56.0, c));
-    col = mix(col, vec3(0.25, 1.0, 0.45), smoothstep(-58.0, -63.0, c));
-    col = mix(col, vec3(1.0, 0.86, 0.15), smoothstep(-65.0, -69.0, c));
-    col = mix(col, vec3(1.0, 0.28, 0.12), smoothstep(-71.0, -75.0, c));
-    col = mix(col, vec3(1.0, 0.45, 1.0), smoothstep(-77.0, -82.0, c));
+    vec3 col = vec3(mix(0.16, 0.85, smoothstep(30.0, -30.0, c)));
+    col = mix(col, vec3(0.10, 0.25, 0.95), smoothstep(-31.0, -35.0, c));
+    col = mix(col, vec3(0.03, 0.62, 0.85), smoothstep(-39.0, -43.0, c));
+    col = mix(col, vec3(0.10, 0.70, 0.12), smoothstep(-46.0, -50.0, c));
+    col = mix(col, vec3(0.95, 0.80, 0.05), smoothstep(-53.0, -57.0, c));
+    col = mix(col, vec3(0.95, 0.35, 0.02), smoothstep(-59.0, -62.0, c));
+    col = mix(col, vec3(0.70, 0.05, 0.02), smoothstep(-64.0, -67.0, c));
+    col = mix(col, vec3(0.30, 0.01, 0.01), smoothstep(-70.0, -76.0, c));
+    col = mix(col, vec3(0.16, 0.0, 0.02), smoothstep(-80.0, -86.0, c));
     return col;
   }
-  float glowOf(float bt) { return smoothstep(-70.0, -82.0, bt - 273.15); }
+  // blue: bright edges and low cloud, the tall cold core in soft grey, over a deep blue sea
+  vec3 blueIR(float bt) { return vec3(0.9, 0.93, 0.98) * mix(1.0, 0.42, smoothstep(238.0, 196.0, bt)); }
+  vec3 styleIR(float bt, float style) { return style < 0.5 ? greyIR(bt) : style < 1.5 ? infra(bt) : blueIR(bt); }
 `;
 
 /** Height field of the storm frame, cross-fading two loop frames, lightly smoothed so single pixels don't spike. */
@@ -39,7 +49,7 @@ const SPHERE_VERTEX = /* glsl */ `
 export const EARTH = {
   vertex: SPHERE_VERTEX,
   fragment: /* glsl */ `
-    uniform sampler2D day, night, water, topo, ir; uniform vec3 sunDir; varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+    uniform sampler2D day, night, water, topo, ir; uniform vec3 sunDir; uniform float style; varying vec2 vUv; varying vec3 vN; varying vec3 vP;
     ${GLSL_IR}
     void main(){
       vec3 N = normalize(vN), V = normalize(cameraPosition - vP), L = normalize(sunDir);
@@ -56,6 +66,7 @@ export const EARTH = {
       vec3 albedo = texture2D(day, vUv).rgb;
       float w = texture2D(water, vUv).r;
       albedo = mix(albedo, albedo * vec3(0.55, 0.75, 1.05), w * 0.5);
+      if (style > 1.5) albedo = mix(albedo * vec3(0.55, 0.85, 0.45), vec3(0.03, 0.09, 0.36), w);
       vec3 sunCol = vec3(1.0, 0.96, 0.9) * 2.3;
       vec3 col = albedo * sunCol * max(ndl, 0.0) * (1.0 - shadow);
       // sunset tint near the terminator
@@ -76,7 +87,7 @@ export const EARTH = {
 export const CLOUDS = {
   vertex: SPHERE_VERTEX,
   fragment: /* glsl */ `
-    uniform sampler2D ir, live; uniform vec3 sunDir, eye, east, north; uniform float palette, patchOn, patchAng, realSun;
+    uniform sampler2D ir, live; uniform vec3 sunDir, eye, east, north; uniform float style, patchOn, patchAng, realSun;
     varying vec2 vUv; varying vec3 vN; varying vec3 vP;
     ${GLSL_IR}
     void main(){
@@ -86,19 +97,17 @@ export const CLOUDS = {
       float isLive = texture2D(live, vUv).r;
       // hide where the 3D patch takes over
       vec3 d = N - eye; float s = dot(d, east) / patchAng, tt = dot(d, north) / patchAng;
-      float inPatch = (1.0 - smoothstep(0.40, 0.47, max(abs(s), abs(tt)))) * step(0.0, dot(N, eye));
+      float inPatch = (1.0 - smoothstep(0.38, 0.47, max(abs(s), abs(tt)))) * step(0.0, dot(N, eye));
       a *= 1.0 - inPatch * patchOn;
       float ndl = dot(N, L);
       // studio light wraps softly; the real sun gives a sharp terminator (high tops catch light just past it)
       float lit = mix(smoothstep(-0.25, 0.6, ndl), smoothstep(-0.05, 0.3, ndl), realSun);
-      // grey: classic IR scale, low warm cloud dim and high cold tops bright; enhanced colours tops below about -40 C
-      vec3 grey = vec3(mix(0.34, 0.8, smoothstep(282.0, 210.0, bt)));
-      vec3 base = palette > 0.5 ? mix(grey, enhance(bt) * 0.75, isLive * smoothstep(236.0, 228.0, bt)) : grey;
+      // the archival gap stays plain grey whatever the style
+      vec3 base = mix(greyIR(bt), styleIR(bt, style), isLive);
       vec3 sunCol = vec3(1.0, 0.95, 0.88) * 0.95 * mix(vec3(1.0, 0.5, 0.25), vec3(1.0), smoothstep(0.0, 0.4, ndl));
       vec3 col = base * (sunCol * lit + vec3(0.10, 0.13, 0.18));
       // IR sees through the night: keep a cool moonlit read of the cloud tops
       col += base * vec3(0.20, 0.24, 0.32) * mix(1.0, 0.35, realSun) * (1.0 - lit) * a;
-      if (palette > 0.5) col += enhance(bt) * smoothstep(-40.0, -70.0, bt - 273.15) * 0.3 * isLive + enhance(bt) * glowOf(bt) * 0.6 * isLive;
       float fres = pow(1.0 - max(dot(N, V), 0.0), 2.0);
       col = mix(col, vec3(0.6, 0.8, 1.0) * lit, fres * 0.12);
       gl_FragColor = vec4(col, a * mix(0.4, 0.85, isLive));
@@ -121,6 +130,52 @@ export const ATMOSPHERE = {
     }`,
 };
 
+/**
+ * Mode 0: the selected storm's own close-up draped on the globe, sharper than the global map: 1 km true colour where the
+ * satellite saw it in daylight (Visible), otherwise the 2 km infrared frame in the chosen style. It fades into the global
+ * cloud shell at its edges.
+ */
+export const IMAGERY = {
+  vertex: /* glsl */ `
+    uniform float patchAng; uniform vec3 eye, east, north;
+    varying vec2 vUv; varying vec3 vUp; varying vec3 vP;
+    void main(){
+      vUv = uv;
+      vec2 st = uv - 0.5;
+      vec3 dir = normalize(eye + (st.x * east + st.y * north) * patchAng);
+      vUp = dir;
+      vec4 w = modelMatrix * vec4(dir * 1.0047, 1.0); vP = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+  fragment: /* glsl */ `
+    uniform sampler2D frameA, frameB, vis; uniform float frameMix, style, visOn, realSun; uniform vec3 sunDir, sunReal;
+    varying vec2 vUv; varying vec3 vUp; varying vec3 vP;
+    ${GLSL_IR}
+    float codeAt(vec2 uv){ return mix(texture2D(frameA, uv).r, texture2D(frameB, uv).r, frameMix); }
+    void main(){
+      float edge = 1.0 - smoothstep(0.38, 0.47, max(abs(vUv.x - 0.5), abs(vUv.y - 0.5)));
+      if (edge <= 0.0) discard;
+      vec3 N = normalize(vUp), V = normalize(cameraPosition - vP), L = normalize(sunDir);
+      float ndl = dot(N, L);
+      float lit = mix(smoothstep(-0.25, 0.6, ndl), smoothstep(-0.05, 0.3, ndl), realSun);
+      vec3 sunCol = vec3(1.0, 0.95, 0.88) * 0.95 * mix(vec3(1.0, 0.5, 0.25), vec3(1.0), smoothstep(0.0, 0.4, ndl));
+      float bt = btOf(codeAt(vUv));
+      float a = pow(smoothstep(286.0, 232.0, bt), 1.15);
+      vec3 base = styleIR(bt, style);
+      vec3 ir = base * (sunCol * lit + vec3(0.10, 0.13, 0.18)) + base * vec3(0.20, 0.24, 0.32) * mix(1.0, 0.35, realSun) * (1.0 - lit);
+      // true colour only where the sun was up when the satellite took it
+      float k = visOn * smoothstep(0.03, 0.16, dot(N, normalize(sunReal)));
+      vec3 v = texture2D(vis, vUv).rgb;
+      // keep the cloud and let the globe's own sea and land show through, so the close-up has no visible square edge
+      float cloud = smoothstep(0.05, 0.32, dot(v, vec3(0.3, 0.45, 0.25)));
+      vec3 tc = v * (sunCol * 1.05 * lit + vec3(0.03, 0.035, 0.045));
+      vec3 col = mix(ir, tc, k);
+      float fres = pow(1.0 - max(dot(N, V), 0.0), 2.0);
+      col = mix(col, vec3(0.6, 0.8, 1.0) * lit, fres * 0.12);
+      gl_FragColor = vec4(col, mix(a * 0.85, cloud, k) * edge);
+    }`,
+};
+
 /** Mode 1: the real 2 km frame on a dense grid, each vertex lifted to its cloud-top height, with self-shadowing. */
 export const CLOUD_TOPS = {
   vertex: /* glsl */ `
@@ -139,7 +194,7 @@ export const CLOUD_TOPS = {
       gl_Position = projectionMatrix * viewMatrix * w;
     }`,
   fragment: /* glsl */ `
-    uniform sampler2D frameA, frameB; uniform float frameMix, exag, palette, patchAng; uniform vec3 sunDir, east, north;
+    uniform sampler2D frameA, frameB, vis; uniform float frameMix, exag, style, visOn, patchAng; uniform vec3 sunDir, east, north;
     varying vec2 vUv; varying vec3 vUp; varying vec3 vP;
     ${GLSL_IR}
     ${GLSL_FRAME}
@@ -168,14 +223,14 @@ export const CLOUD_TOPS = {
       }
       float ndl = max(dot(N, L), 0.0);
       float wrap = max((dot(N, L) + 0.35) / 1.35, 0.0);
-      vec3 base = palette > 0.5 ? enhance(bt) : vec3(1.0);
+      // Visible drapes the real true-colour picture over the lifted tops
+      vec3 base = style < 0.5 ? mix(vec3(0.95), texture2D(vis, vUv).rgb, visOn) : styleIR(bt, style) * 1.15;
       vec3 sunCol = vec3(1.0, 0.95, 0.88) * 1.8;
       vec3 sky = vec3(0.22, 0.36, 0.62) * (0.35 + 0.65 * max(dot(N, vUp), 0.0));
       vec3 col = base * (sunCol * mix(ndl, wrap, 0.35) * (1.0 - shadow * 0.85) + sky);
       // silver lining on edges facing away
       float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0) * max(dot(-V, L), 0.0);
       col += vec3(1.0, 0.9, 0.8) * rim * 1.5;
-      if (palette > 0.5) col += enhance(bt) * glowOf(bt) * 2.6;
       gl_FragColor = vec4(col, a);
     }`,
 };
@@ -187,7 +242,7 @@ export const CLOUD_TOPS = {
 export const VOLUME = {
     vertex: /* glsl */ `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragment: /* glsl */ `
-    uniform sampler2D frameA, frameB; uniform float frameMix, exag, palette, time, cutaway; uniform vec3 sunDir;
+    uniform sampler2D frameA, frameB, vis; uniform float frameMix, exag, style, visOn, time, cutaway; uniform vec3 sunDir;
     uniform vec3 eye, east, north; uniform float patchAng, rmw;
     uniform mat4 modelMatrix; varying vec3 vW;
     ${GLSL_IR}
@@ -243,9 +298,10 @@ export const VOLUME = {
           for (int j = 1; j <= 4; j++) { float bt2; od += density(kmOf(w + Lw * float(j * j) * 0.0022), bt2); }
           float lightT = exp(-od * 2.6);
           float powder = 1.0 - exp(-d * 4.0);
-          vec3 base = palette > 0.5 ? mix(vec3(0.95), enhance(bt), smoothstep(11.0, 14.5, km.z)) : vec3(0.95);
+          vec2 uvk = km.xy / 2048.0 + 0.5;
+          vec3 base = style < 0.5 ? mix(vec3(0.95), clamp(texture2D(vis, uvk).rgb * 1.1, 0.0, 1.0), visOn)
+                    : style < 1.5 ? mix(vec3(0.95), infra(bt), smoothstep(11.0, 14.5, km.z)) : blueIR(bt);
           vec3 L = base * (sunCol * lightT * mix(0.6, 1.0, powder) + skyCol);
-          if (palette > 0.5) L += enhance(bt) * glowOf(bt) * 1.4;
           if (cutaway > 0.5) {
             float r = length(km.xy), x = pow(rmw / max(r, 1.0), 1.6);
             float v = sqrt(x * exp(1.0 - x)) * smoothstep(0.0, 4.0, km.z) * (1.0 - smoothstep(10.0, 16.0, km.z));

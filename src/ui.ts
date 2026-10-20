@@ -2,7 +2,7 @@
 // frame in meta.json.
 import * as THREE from "three";
 import { dayStr, degC, dvorak, frameDate, hhmm, subsolar, topKm, type Meta, type Storm } from "./meta";
-import { ll2v, type Globe, type Mode } from "./hdr/scene";
+import { ll2v, type Globe, type Mode, type Style } from "./hdr/scene";
 
 const CITIES: [string, number, number][] = [
   ["Manila", 14.6, 121.0], ["Guam", 13.44, 144.79], ["Tokyo", 35.68, 139.69], ["Taipei", 25.03, 121.56],
@@ -69,7 +69,26 @@ export function bindControls(globe: Globe, meta: Meta) {
     $("modehint").textContent = hints()[m];
   };
   document.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(Number(b.dataset.mode) as Mode)));
-  document.querySelectorAll<HTMLElement>("[data-pal]").forEach((b) => b.addEventListener("click", () => { globe.setPalette(b.dataset.pal === "1"); press("pal", b.dataset.pal!); }));
+  // imagery style, with a legend to match
+  const RAMPS: Record<Style, { ramp: string; ticks: string[]; hint: () => string }> = {
+    0: { ramp: "linear-gradient(90deg, #3a3f46, #e9ecef)", ticks: ["warm, low", "cold, high"],
+      hint: () => st.visible ? `True colour from ${st.satellite}'s visible channels (1 km) around the storm. Elsewhere, and at night, infrared in grey.`
+        : "No daylight picture of this storm in this frame, so it shows infrared in grey." },
+    1: { ramp: "linear-gradient(90deg, #2a2a2a 0%, #d9d9d9 30%, #1a44f2 38%, #08a6d9 48%, #1bb320 58%, #f2cc0d 67%, #f25a05 76%, #b30d05 85%, #4d0202 100%)",
+      ticks: ["+20", "−33", "−43", "−53", "−63", "−73 °C"], hint: () => "Infrared coloured by cloud-top temperature. Red and deep red are the tallest, strongest thunderstorms." },
+    2: { ramp: "linear-gradient(90deg, #08184f, #e6edf8 45%, #6b7078)", ticks: ["sea", "low cloud", "cold core"],
+      hint: () => "Infrared clouds over a blue sea. The tall, cold core shows soft grey; thinner and lower cloud is bright." },
+  };
+  let style: Style = storms.some((s) => s.visible) ? 0 : 1;
+  const setStyle = (s: Style) => {
+    style = s; globe.setStyle(s); press("style", String(s));
+    const r = RAMPS[s];
+    $("ramp").style.background = r.ramp;
+    html("ticks", r.ticks.map((t) => `<span>${t}</span>`).join(""));
+    $("legend-title").textContent = s === 0 ? "Visible imagery" : s === 1 ? "Cloud-top temperature" : "Infrared over blue sea";
+    $("stylehint").textContent = r.hint();
+  };
+  document.querySelectorAll<HTMLElement>("[data-style]").forEach((b) => b.addEventListener("click", () => setStyle(Number(b.dataset.style) as Style)));
   // local solar time at the storm, so it's clear why the real sun can look like the studio light
   const sunHint = () => {
     const h = (((12 + (st.eye.lon - subsolar(frame).lon) / 15) % 24) + 24) % 24;
@@ -138,6 +157,7 @@ export function bindControls(globe: Globe, meta: Meta) {
     $("play").hidden = st.loopFrames < 2;
     $("modehint").textContent = hints()[mode];
     $("sunhint").textContent = sunHint();
+    $("stylehint").textContent = RAMPS[style].hint();
   }
 
   const canvas = $("gl"), tmp = new THREE.Vector3(), toCam = new THREE.Vector3();
@@ -183,4 +203,5 @@ export function bindControls(globe: Globe, meta: Meta) {
   stormLabels[0]?.classList.add("on");
   $("play").hidden = st.loopFrames < 2;
   setMode(0);
+  setStyle(style);
 }

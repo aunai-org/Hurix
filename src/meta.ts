@@ -17,6 +17,8 @@ export interface Storm {
   motion: { kt: number; bearing: number; hours: number };
   /** [time, lat, lon, eye visible (1) or centre from cloud mass (0)], oldest first. */
   track: [string, number, number, number][];
+  /** True when the pipeline cut a 1 km true-colour close-up (storm_vis.jpg) from a daylight frame. */
+  visible?: boolean;
   /** Folder of its close-up and loop, relative to the site root. */
   dir: string;
 }

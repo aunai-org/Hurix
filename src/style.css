@@ -32,7 +32,7 @@ body { margin: 0; background: var(--space); color: var(--ink); font: 13px/1.45 v
 .est { color: var(--accent); }
 .sep { border-top: 1px solid var(--line); }
 .legend { box-sizing: border-box; position: fixed; top: calc(84px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); width: 268px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 11.5px; }
-.ramp { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #222 0%, #fff 30%, #8cd9ff 46%, #3366ff 56%, #40ff73 66%, #ffdb26 76%, #ff4720 86%, #ff73ff 100%); }
+.ramp { height: 10px; border-radius: 4px; }
 .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .row { display: flex; align-items: center; gap: 8px; color: #d7dade; }
 .dot { width: 9px; height: 9px; border-radius: 9px; background: var(--accent); flex: none; }

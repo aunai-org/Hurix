@@ -5,10 +5,12 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, SKY, VOLUME, WIND } from "./glsl";
+import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME, WIND } from "./glsl";
 import { dvorak, frameDate, subsolar, type Meta, type Storm } from "../meta";
 
 export type Mode = 0 | 1 | 2;
+/** 0 = Visible, 1 = Infra, 2 = Blue. */
+export type Style = 0 | 1 | 2;
 const PATCH_KM = 2048, R_KM = 6371, D2R = Math.PI / 180;
 
 /** lat/lon to a point on the globe. Matches SphereGeometry's UV layout: u = (lon + 180) / 360. */
@@ -23,7 +25,7 @@ export interface Globe {
   eye: THREE.Vector3;
   selectStorm(i: number): void;
   setMode(m: Mode): void;
-  setPalette(enhanced: boolean): void;
+  setStyle(s: Style): void;
   setRealSun(on: boolean): void;
   setHeight(exag: number): void;
   setCutaway(on: boolean): void;
@@ -42,7 +44,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const storms = meta.storms;
   let cur = 0;
 
-  let mode: Mode = 0, realSun = false;
+  let mode: Mode = 0, realSun = false, style: Style = 0, playing = false;
 
   // ---------- renderer ----------
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -83,12 +85,16 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     live: tex("data/ir_live_mask.png", false),
   };
   // each storm's close-up and loop, loaded the first time it is selected
-  const stormTex = new Map<string, { still: THREE.Texture; loop: THREE.Texture[] }>();
+  const stormTex = new Map<string, { still: THREE.Texture; loop: THREE.Texture[]; vis: THREE.Texture | null }>();
   const texFor = (s: Storm) => {
     let t = stormTex.get(s.id);
     if (!t) {
       const clamp = (x: THREE.Texture) => { x.wrapS = x.wrapT = THREE.ClampToEdgeWrapping; return x; };
-      t = { still: clamp(tex(`${s.dir}storm_ir.png`, false)), loop: Array.from({ length: s.loopFrames }, (_, i) => clamp(tex(`${s.dir}loop/f${String(i).padStart(2, "0")}.jpg`, false))) };
+      t = {
+        still: clamp(tex(`${s.dir}storm_ir.png`, false)),
+        loop: Array.from({ length: s.loopFrames }, (_, i) => clamp(tex(`${s.dir}loop/f${String(i).padStart(2, "0")}.jpg`, false))),
+        vis: s.visible ? clamp(tex(`${s.dir}storm_vis.jpg`, true)) : null,
+      };
       stormTex.set(s.id, t);
     }
     return t;
@@ -100,7 +106,10 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const first = texFor(storms[0]);
   const uni = {
     sunDir: { value: new THREE.Vector3(1, 0, 0) },
-    palette: { value: 1 },
+    style: { value: 0 },
+    vis: { value: first.vis ?? first.still },
+    visOn: { value: 0 },
+    sunReal: { value: SUN_REAL },
     time: { value: 0 },
     patchOn: { value: 0 },
     eye: { value: eye },
@@ -169,6 +178,13 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     trackGroup.add(pulse); pulses.push(pulse);
   }
 
+  // ---------- mode 0: the selected storm's sharp close-up, draped over the globe ----------
+  const imagery = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 192, 192), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, uniforms: uni, vertexShader: IMAGERY.vertex, fragmentShader: IMAGERY.fragment,
+  }));
+  imagery.frustumCulled = false; imagery.renderOrder = 1;
+  scene.add(imagery);
+
   // ---------- mode 1: 3D cloud tops ----------
   const patch = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 640, 640), new THREE.ShaderMaterial({
     transparent: true, uniforms: uni, vertexShader: CLOUD_TOPS.vertex, fragmentShader: CLOUD_TOPS.fragment,
@@ -228,7 +244,11 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     uni.vmax.value = dvorak(st.eyeK, st.ringK).kt;
     const t = texFor(st);
     uni.frameA.value = t.loop[t.loop.length - 1] ?? t.still; uni.frameB.value = t.still; uni.frameMix.value = 1;
+    uni.vis.value = t.vis ?? t.still;
+    syncVis();
   };
+  // true colour is a single still, so the loop plays in infrared
+  function syncVis() { uni.visOn.value = style === 0 && !playing && texFor(storms[cur]).vis ? 1 : 0; }
   useStorm(0);
 
   // ---------- camera moves ----------
@@ -307,14 +327,14 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     setMode(m) {
       mode = m;
       resize();
-      uni.patchOn.value = m > 0 ? 1 : 0;
-      patch.visible = m === 1; volBox.visible = m === 2; particles.visible = m === 2;
+      uni.patchOn.value = 1;
+      imagery.visible = m === 0; patch.visible = m === 1; volBox.visible = m === 2; particles.visible = m === 2;
       trackGroup.visible = m === 0 && showTrack;
-      controls.minDistance = m === 0 ? 1.15 : 0.05;
+      controls.minDistance = m === 0 ? 1.07 : 0.05;
       const v = viewFor(m);
       flyTo(v.pos, v.target);
     },
-    setPalette(on) { uni.palette.value = on ? 1 : 0; },
+    setStyle(s) { style = s; uni.style.value = s; syncVis(); },
     setRealSun(on) {
       realSun = on;
       if (on && mode === 0) {
@@ -328,6 +348,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     setTrack(on) { showTrack = on; trackGroup.visible = mode === 0 && on; },
     setLoop(t) {
       const { still, loop } = texFor(storms[cur]), n = loop.length;
+      if (playing !== (t !== null)) { playing = t !== null; syncVis(); }
       if (t === null || n < 2) { uni.frameA.value = loop[n - 1] ?? still; uni.frameB.value = still; uni.frameMix.value = 1; return; }
       const i = Math.floor(t) % n;
       uni.frameA.value = loop[i]; uni.frameB.value = loop[(i + 1) % n]; uni.frameMix.value = t - Math.floor(t);
