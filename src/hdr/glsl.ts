@@ -46,12 +46,16 @@ const SPHERE_VERTEX = /* glsl */ `
   varying vec2 vUv; varying vec3 vN; varying vec3 vP;
   void main(){ vUv = uv; vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position,1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
 
+// the global IR while a loop plays: two hourly frames either side of the moment, cross-faded
+const GLOBE_IR = /* glsl */ `float irAt(vec2 uv) { return mix(texture2D(ir, uv).r, texture2D(irB, uv).r, irMix); }`;
+
 /** Blue Marble day side, city lights at night, ocean glint, terrain bump, and shadows cast by the IR clouds. */
 export const EARTH = {
   vertex: SPHERE_VERTEX,
   fragment: /* glsl */ `
-    uniform sampler2D day, night, water, topo, ir; uniform vec3 sunDir; uniform float style; varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+    uniform sampler2D day, night, water, topo, ir, irB; uniform vec3 sunDir; uniform float style, irMix; varying vec2 vUv; varying vec3 vN; varying vec3 vP;
     ${GLSL_IR}
+    ${GLOBE_IR}
     void main(){
       vec3 N = normalize(vN), V = normalize(cameraPosition - vP), L = normalize(sunDir);
       vec2 px = vec2(1.0/2048.0, 1.0/1024.0);
@@ -63,7 +67,7 @@ export const EARTH = {
       // cloud shadow: sample the IR clouds shifted away from the sun
       vec3 Lt = L - N * dot(L, N);
       vec2 sh = vec2(dot(Lt, t), dot(Lt, b)) * vec2(0.0045, 0.009);
-      float shadow = cloudOf(btOf(texture2D(ir, vUv + sh).r)) * 0.72;
+      float shadow = cloudOf(btOf(irAt(vUv + sh))) * 0.72;
       vec3 albedo = texture2D(day, vUv).rgb;
       float w = texture2D(water, vUv).r;
       albedo = mix(albedo, albedo * vec3(0.55, 0.75, 1.05), w * 0.5);
@@ -74,7 +78,7 @@ export const EARTH = {
       col *= mix(vec3(1.0, 0.55, 0.3), vec3(1.0), smoothstep(0.0, 0.35, ndlS));
       // city lights on the night side, dimmed under cloud
       vec3 lights = pow(texture2D(night, vUv).rgb, vec3(1.6)) * vec3(1.0, 0.78, 0.5) * 7.0;
-      float cl = cloudOf(btOf(texture2D(ir, vUv).r));
+      float cl = cloudOf(btOf(irAt(vUv)));
       col += lights * (1.0 - dayF) * (1.0 - cl * 0.85);
       col += albedo * vec3(0.012, 0.018, 0.03);
       // aerial perspective toward the limb
@@ -88,12 +92,13 @@ export const EARTH = {
 export const CLOUDS = {
   vertex: SPHERE_VERTEX,
   fragment: /* glsl */ `
-    uniform sampler2D ir, live; uniform vec3 sunDir, eye, east, north; uniform float style, patchOn, patchAng, realSun;
+    uniform sampler2D ir, irB, live; uniform vec3 sunDir, eye, east, north; uniform float style, patchOn, patchAng, realSun, irMix;
     varying vec2 vUv; varying vec3 vN; varying vec3 vP;
     ${GLSL_IR}
+    ${GLOBE_IR}
     void main(){
       vec3 N = normalize(vN), V = normalize(cameraPosition - vP), L = normalize(sunDir);
-      float bt = btOf(texture2D(ir, vUv).r);
+      float bt = btOf(irAt(vUv));
       float a = pow(smoothstep(286.0, 232.0, bt), 1.15);
       float isLive = texture2D(live, vUv).r;
       // hide where the 3D patch takes over

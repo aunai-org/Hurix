@@ -129,8 +129,13 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const pad = (i: number) => String(i).padStart(2, "0");
   const loopFrame = (s: Storm, i: number) => (texFor(s).loop[i] ??= redTexture(`${base}${s.dir}loop/f${pad(i)}.jpg`));
   const visFrame = (s: Storm, i: number) => (texFor(s).visLoop[i] ??= colourTexture(`${base}${s.dir}loop/v${pad(i)}.jpg`));
+  // the whole globe's hourly infrared frames, oldest first; the frame itself is the full-size ir_global.jpg
+  const globeMs = [...(meta.globeTimes ?? []).map(isoMs), FRAME.getTime()];
+  const globeTex: Promise<THREE.Texture>[] = [];
+  const globeFrame = (i: number) => i === globeMs.length - 1 ? Promise.resolve(T.ir) : (globeTex[i] ??= redTexture(`${base}data/globe/g${pad(i)}.jpg`));
   // the prepared loop: infrared frames with their times, and the true-colour frames covering the same span (if any)
   let loopIR: THREE.Texture[] = [], loopMs: number[] = [], loopVis: THREE.Texture[] = [], loopVisMs: number[] = [];
+  let loopGlobe: THREE.Texture[] = [], loopGlobeMs: number[] = [];
   const rmwOf = (s: Storm) => Math.max(15, (s.eyeDiameterKm ?? 30) * 0.65);
 
   // ---------- uniforms shared by every material ----------
@@ -154,6 +159,9 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     frameMix: { value: 1 },
     visMix: { value: 0 },
     exag: { value: 14 },
+    ir: { value: T.ir as THREE.Texture },
+    irB: { value: T.ir as THREE.Texture },
+    irMix: { value: 0 },
     realSun: { value: 0 },
     rmw: { value: 30 },
     vmax: { value: 100 },
@@ -164,12 +172,12 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     side: THREE.BackSide, depthWrite: false, uniforms: { map: { value: T.sky } }, vertexShader: SKY.vertex, fragmentShader: SKY.fragment,
   })));
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 256, 128), new THREE.ShaderMaterial({
-    uniforms: { ...uni, day: { value: T.day }, night: { value: T.night }, water: { value: T.water }, topo: { value: T.topo }, ir: { value: T.ir } },
+    uniforms: { ...uni, day: { value: T.day }, night: { value: T.night }, water: { value: T.water }, topo: { value: T.topo } },
     vertexShader: EARTH.vertex, fragmentShader: EARTH.fragment,
   })));
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.0045, 256, 128), new THREE.ShaderMaterial({
     transparent: true, depthWrite: false,
-    uniforms: { ...uni, ir: { value: T.ir }, live: { value: T.live } },
+    uniforms: { ...uni, live: { value: T.live } },
     vertexShader: CLOUDS.vertex, fragmentShader: CLOUDS.fragment,
   })));
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.06, 128, 64), new THREE.ShaderMaterial({
@@ -408,8 +416,13 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       const covered = span.length > 1 && span[0][0] <= ms[0] + 60e3 && span[span.length - 1][0] >= ms[ms.length - 1] - 60e3
         && span.every(([t], k) => k === 0 || t - span[k - 1][0] <= 31 * 60e3);
       const vis = covered ? await Promise.all(span.map(([, i]) => visFrame(st, i))).catch(() => []) : [];
+      // the whole globe moves too: its hourly frames from the last one at or before the loop's start
+      let g0 = globeMs.length - 1; while (g0 > 0 && globeMs[g0] > ms[0]) g0--;
+      const gi = globeMs.map((_, i) => i).slice(g0);
+      const globe = gi.length > 1 ? await Promise.all(gi.map(globeFrame)).catch(() => []) : [];
       if (st !== storms[cur]) return;
       loopIR = ir; loopMs = ms; loopVis = vis; loopVisMs = vis.length ? span.map(([t]) => t) : [];
+      loopGlobe = globe; loopGlobeMs = globe.length ? gi.map((i) => globeMs[i]) : [];
       syncVis();
     },
     setLoop(t) {
@@ -418,16 +431,24 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       if (t === null || n < 2) {
         uni.frameA.value = uni.frameB.value = still; uni.frameMix.value = 1;
         uni.vis.value = uni.visB.value = vis ?? still;
+        uni.ir.value = uni.irB.value = T.ir; uni.irMix.value = 0;
         return;
       }
       const i = Math.floor(t) % n, j = (i + 1) % n, f = t - Math.floor(t);
       uni.frameA.value = loopIR[i]; uni.frameB.value = loopIR[j]; uni.frameMix.value = j === 0 ? 0 : f;
+      const now = loopMs[i] + (j === 0 ? 0 : (loopMs[j] - loopMs[i]) * f);
+      // frames further apart than the infrared ones (true colour every 30 minutes, the globe every hour): blend the pair either side
+      const pair = (times: number[]) => {
+        let k = 0; while (k < times.length - 2 && times[k + 1] <= now) k++;
+        return [k, THREE.MathUtils.clamp((now - times[k]) / (times[k + 1] - times[k]), 0, 1)] as const;
+      };
       if (loopVis.length > 1) {
-        // the true-colour frames are 30 minutes apart: blend the two either side of the infrared frame's time
-        const now = loopMs[i] + (j === 0 ? 0 : (loopMs[j] - loopMs[i]) * f);
-        let k = 0; while (k < loopVisMs.length - 2 && loopVisMs[k + 1] <= now) k++;
-        const m = THREE.MathUtils.clamp((now - loopVisMs[k]) / (loopVisMs[k + 1] - loopVisMs[k]), 0, 1);
+        const [k, m] = pair(loopVisMs);
         uni.vis.value = loopVis[k]; uni.visB.value = loopVis[k + 1]; uni.visMix.value = m;
+      }
+      if (loopGlobe.length > 1) {
+        const [k, m] = pair(loopGlobeMs);
+        uni.ir.value = loopGlobe[k]; uni.irB.value = loopGlobe[k + 1]; uni.irMix.value = m;
       }
     },
     onFrame(fn) { listeners.push(fn); },

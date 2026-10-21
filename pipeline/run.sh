@@ -15,3 +15,4 @@ python3 -W ignore reproject.py 4096
 python3 -W ignore export.py ../public/data
 FRAME=$F python3 -W ignore storms.py ../public/data
 FRAME=$F python3 -W ignore visible.py ../public/data
+FRAME=$F python3 -W ignore globe.py ../public/data

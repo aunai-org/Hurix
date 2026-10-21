@@ -138,6 +138,10 @@ For each storm it builds a true-colour close-up at 1 km per pixel (`storm_vis.jp
 
 Where the sun was down, there's no visible picture, so the page shows infrared there instead. If any loop frame fails, the loop falls back to infrared.
 
+### 4.6 The whole-globe loop (`globe.py`)
+
+So that every cloud on the globe moves while the loop plays, not only the storm, this step stitches the whole world once an hour over the last 24 hours. It downloads the three satellites' full disks for each hour (Himawari's 88 tiles included), averages each satellite's 2 km pixels into 8 km blocks, and maps them onto a 2048 × 1024 world map the same way `reproject.py` does, with the same archive clouds in the Meteosat gap. The frames are written as `globe/g00.jpg` onward, and their times go into `meta.json` as `globeTimes`. The hours are stitched three at a time, in separate processes, and take a few minutes in all.
+
 ## 5. The files the page loads
 
 Everything lives in `public/data/`:
@@ -151,6 +155,7 @@ Everything lives in `public/data/`:
 | `storms/sN/storm_vis.jpg` | 2048 × 2048 | The storm's true-colour close-up (1 km per pixel), if it was daytime |
 | `storms/sN/loop/fNN.jpg` | 1024 × 1024 | Infrared loop frames over the last 24 hours (30 minutes apart, 10 minutes in the last 6 hours) |
 | `storms/sN/loop/vNN.jpg` | 1024 × 1024 | True-colour loop frames, every 30 minutes over the last 6 hours, daylight only |
+| `globe/gNN.jpg` | 2048 × 1024 | Whole-globe infrared, once an hour over the last 24 hours (the frame itself is `ir_global.jpg`) |
 
 **How temperatures are stored.** An image pixel holds 0–255, so infrared images store a *code* instead of a temperature:
 
@@ -194,7 +199,7 @@ From the inside out:
 | Layer | Shader | What it does |
 | --- | --- | --- |
 | Earth | `EARTH` | Blue Marble by day, city lights at night, with the land/water mask and terrain bumps for relief |
-| Clouds | `CLOUDS` | The global infrared layer on a shell just above the ground. Each pixel's code becomes a temperature, then an opacity (warm sea is clear, cold tops are solid) and a colour from the current style. Clouds cast a soft shadow on the ground. |
+| Clouds | `CLOUDS` | The global infrared layer on a shell just above the ground. Each pixel's code becomes a temperature, then an opacity (warm sea is clear, cold tops are solid) and a colour from the current style. Clouds cast a soft shadow on the ground. While the loop plays, it blends the two hourly globe frames either side of the moment, so the clouds move everywhere. |
 | Imagery patch | `IMAGERY` | The selected storm's sharp close-up, draped over the globe (Imagery view only). Its edges fade into the global clouds, so there's no square seam. |
 | Atmosphere | `ATMOSPHERE` | A faint blue rim that fades softly into space |
 | Sky | `SKY` | The star background |

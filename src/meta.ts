@@ -30,6 +30,8 @@ export interface Meta {
   frame: string;
   /** Strongest first. */
   storms: Storm[];
+  /** Times of the whole-globe infrared frames (data/globe/gNN.jpg): once an hour over the last 24 hours, oldest first. */
+  globeTimes?: string[];
 }
 
 export async function loadMeta(base: string): Promise<Meta> {
@@ -38,7 +40,7 @@ export async function loadMeta(base: string): Promise<Meta> {
   const raw = await res.json();
   // the first pipeline wrote one storm at the top level, with its files directly in data/
   if (!raw.storms) return { frame: raw.frame, storms: [{ ...raw, id: "s1", satellite: "Himawari-9", dir: "data/" }] };
-  return { frame: raw.frame, storms: (raw.storms as Omit<Storm, "dir">[]).map((s) => ({ ...s, dir: `data/storms/${s.id}/` })) };
+  return { frame: raw.frame, globeTimes: raw.globeTimes, storms: (raw.storms as Omit<Storm, "dir">[]).map((s) => ({ ...s, dir: `data/storms/${s.id}/` })) };
 }
 
 export const frameDate = (meta: Meta) => new Date(meta.frame.replace("Z", ":00Z"));
