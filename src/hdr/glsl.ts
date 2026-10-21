@@ -150,10 +150,10 @@ export const IMAGERY = {
     }`,
   fragment: /* glsl */ `
     uniform sampler2D frameA, frameB, vis, visB;
-    vec3 visAt(vec2 uv); uniform float frameMix, style, visOn, realSun; uniform vec3 sunDir, sunReal;
+    vec3 visAt(vec2 uv); uniform float frameMix, visMix, style, visOn, realSun; uniform vec3 sunDir, sunReal;
     varying vec2 vUv; varying vec3 vUp; varying vec3 vP;
     ${GLSL_IR}
-    vec3 visAt(vec2 uv){ return mix(texture2D(vis, uv).rgb, texture2D(visB, uv).rgb, frameMix); }
+    vec3 visAt(vec2 uv){ return mix(texture2D(vis, uv).rgb, texture2D(visB, uv).rgb, visMix); }
     float codeAt(vec2 uv){ return mix(texture2D(frameA, uv).r, texture2D(frameB, uv).r, frameMix); }
     void main(){
       float edge = 1.0 - smoothstep(0.38, 0.47, max(abs(vUv.x - 0.5), abs(vUv.y - 0.5)));
@@ -198,10 +198,10 @@ export const CLOUD_TOPS = {
     }`,
   fragment: /* glsl */ `
     uniform sampler2D frameA, frameB, vis, visB;
-    vec3 visAt(vec2 uv); uniform float frameMix, exag, style, visOn, patchAng; uniform vec3 sunDir, east, north;
+    vec3 visAt(vec2 uv); uniform float frameMix, visMix, exag, style, visOn, patchAng; uniform vec3 sunDir, east, north;
     varying vec2 vUv; varying vec3 vUp; varying vec3 vP;
     ${GLSL_IR}
-    vec3 visAt(vec2 uv){ return mix(texture2D(vis, uv).rgb, texture2D(visB, uv).rgb, frameMix); }
+    vec3 visAt(vec2 uv){ return mix(texture2D(vis, uv).rgb, texture2D(visB, uv).rgb, visMix); }
     ${GLSL_FRAME}
     void main(){
       float bt = btOf(codeAt(vUv));
@@ -248,13 +248,13 @@ export const VOLUME = {
     vertex: /* glsl */ `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragment: /* glsl */ `
     uniform sampler2D frameA, frameB, vis, visB;
-    vec3 visAt(vec2 uv); uniform float frameMix, exag, style, visOn, time; uniform vec3 sunDir;
+    vec3 visAt(vec2 uv); uniform float frameMix, visMix, exag, style, visOn, time; uniform vec3 sunDir;
     uniform vec3 eye, east, north; uniform float patchAng, rmw;
     uniform mat4 modelMatrix; varying vec3 vW;
     ${GLSL_IR}
     // explicit level 0: these are read inside a loop with early exits, where the GPU can't work out a mip level by itself
     // (on real GPUs that gave a blurred, cloudless frame; software renderers happened to cope)
-    vec3 visAt(vec2 uv){ return mix(textureLod(vis, uv, 0.0).rgb, textureLod(visB, uv, 0.0).rgb, frameMix); }
+    vec3 visAt(vec2 uv){ return mix(textureLod(vis, uv, 0.0).rgb, textureLod(visB, uv, 0.0).rgb, visMix); }
     float codeAt(vec2 uv){ return mix(textureLod(frameA, uv, 0.0).r, textureLod(frameB, uv, 0.0).r, frameMix); }
     float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
     float noise(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);

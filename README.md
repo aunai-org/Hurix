@@ -33,7 +33,7 @@ A few more controls:
 
 - **Lighting:** *Studio* uses a fixed light that shows the 3D shapes clearly. *Real sun* puts the sun where it really was at the frame time, so half the globe is in night.
 - **Track:** draws each storm's path over the last 48 hours. It's off at first.
-- **Play:** runs the last 3 hours in 10-minute steps, using the real satellite frames.
+- **Play** with **6 h / 12 h / 24 h:** replays the real satellite frames for the last 6 hours (every 10 minutes), 12 hours or 24 hours (every 30 minutes). The frames load the first time you play a length.
 - **Storm and Legend:** two tabs on the right edge. Each opens a panel (the storm's details, or what the colours mean) that slides back out of the way by itself.
 
 On a phone the same page fits a portrait screen, with the panels as drawers on the right edge:
@@ -47,7 +47,7 @@ NOAA satellite files ──► pipeline/ (Python) ──► public/data/ (images
 ```
 
 - **Data:** infrared and visible pictures from three weather satellites, GOES-19, GOES-18 and Himawari-9, downloaded from [NOAA's open data on AWS](https://registry.opendata.aws/noaa-goes/). No account or key needed. The Earth underneath is NASA's Blue Marble.
-- **Pipeline:** Python scripts stitch the satellites into one world map, find the storms by their cold cloud cores, follow each one back 48 hours, and cut a sharp close-up and a 3-hour loop for each.
+- **Pipeline:** Python scripts stitch the satellites into one world map, find the storms by their cold cloud cores, follow each one back 48 hours, and cut a sharp close-up and a 24-hour loop for each.
 - **Page:** a static TypeScript site that draws everything with [three.js](https://threejs.org) and WebGL shaders, built with [Vite](https://vite.dev).
 - **3D:** cloud heights come from cloud-top temperatures (the air cools about 6.3 °C per km), so the 3D shapes are modelled from real measurements.
 

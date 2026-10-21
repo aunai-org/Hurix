@@ -6,8 +6,8 @@ export interface Storm {
   /** The satellite its close-up and track come from. */
   satellite: string;
   loopFrames: number;
-  /** Time of each loop frame (older pipelines left this out; the frames were then 10 minutes apart). */
-  loopTimes?: string[];
+  /** Time of each loop frame, oldest first: every 30 minutes from 24 h back to 6 h back, then every 10 minutes. */
+  loopTimes: string[];
   eye: { lat: number; lon: number };
   /** Warmest pixel in the eye and coldest top in the ring around it, in kelvin. */
   eyeK: number;
@@ -19,8 +19,8 @@ export interface Storm {
   track: [string, number, number, number][];
   /** True when the pipeline cut a 1 km true-colour close-up (storm_vis.jpg) from a daylight frame. */
   visible?: boolean;
-  /** Number of true-colour loop frames (loop/vNN.jpg), one per infrared loop frame, when the whole loop was daylit. */
-  visLoop?: number;
+  /** Times of the true-colour loop frames (loop/vNN.jpg): every 30 minutes over the last 6 hours, daylight only. */
+  visTimes?: string[];
   /** Folder of its close-up and loop, relative to the site root. */
   dir: string;
 }
@@ -71,4 +71,15 @@ export function subsolar(date: Date): { lat: number; lon: number } {
   const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
   const lon = ((((ra - gmst * 15) + 540) % 360) + 360) % 360 - 180;
   return { lat: dec, lon };
+}
+
+/** "YYYY-MM-DDTHH:MMZ" → milliseconds. */
+export const isoMs = (iso: string) => Date.parse(iso.replace("Z", ":00Z"));
+
+/** The loop frames to play for a range in hours: all frames in the last 6 h; for longer ranges, the 30-minute ones. */
+export function loopIndices(s: Storm, hours: number): number[] {
+  const end = isoMs(s.loopTimes[s.loopTimes.length - 1]), from = end - hours * 3600e3 - 60e3;
+  return s.loopTimes.map((t, i) => [isoMs(t), i] as const)
+    .filter(([ms]) => ms >= from && (hours <= 6 || Math.round((end - ms) / 60e3) % 30 === 0))
+    .map(([, i]) => i);
 }

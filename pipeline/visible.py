@@ -7,7 +7,7 @@ it out where the sun was low or down at the frame time and shows infrared there 
 Himawari-9 has real blue, green and red bands (1, 2, 3). GOES has blue and red (1, 2) plus a near-infrared "veggie" band
 (3); its green is synthesised from the three the way CIMSS does it.
 
-It also cuts a true-colour frame (1024 px) for each infrared loop frame, loop/vNN.jpg, so the loop plays in true colour.
+It also cuts true-colour loop frames (1024 px, loop/vNN.jpg) every 30 minutes over the last 6 hours, where it was daylight;\nmeta.json lists their times in visTimes.
 
 Usage: FRAME=YYYY-MM-DDTHH:MM python3 visible.py OUT_DIR      (after storms.py has written OUT_DIR/meta.json)
 """
@@ -114,6 +114,12 @@ def sample(disc, la, lo):
     return np.where(ok, out, 0.0).astype(np.float32)
 
 
+def daylit(when, lat, lon):
+    """Share of the close-up in daylight, from a coarse grid, so night frames are skipped before any download."""
+    la, lo = S.grid_latlon(lat, lon, 64, KMV)
+    return float(np.mean(cos_sza(la, lo, when) > 0.1))
+
+
 def true_colour(sat, when, lat, lon):
     la, lo = S.grid_latlon(lat, lon, NV, KMV)
     if sat == "himawari9":
@@ -140,30 +146,39 @@ def main():
     for st in meta["storms"]:
         sat = sat_of[st["satellite"]]
         img = None
-        for dm in (0, -10, 10):
+        for dm in (0, -10, 10) if daylit(frame, st["eye"]["lat"], st["eye"]["lon"]) >= 0.05 else ():
             try:
                 img, day = true_colour(sat, frame - timedelta(minutes=dm), st["eye"]["lat"], st["eye"]["lon"]); break
             except (FileNotFoundError, OSError) as e:
                 print("  skip", st["id"], dm, e)
         st.pop("visible", None)
         if img is None or day < 0.05:
-            print(st["id"], "no daylight visible image"); continue
-        Image.fromarray(img).save(os.path.join(out, "storms", st["id"], "storm_vis.jpg"), quality=88)
-        st["visible"] = True
-        print(st["id"], f"visible: {day:.0%} of the close-up in daylight")
-        # the loop in true colour, frame for frame with the infrared loop; any frame that fails ends it (the page falls
-        # back to infrared for the loop)
-        st.pop("visLoop", None)
-        n = 0
-        for i, t in enumerate(st.get("loopTimes", [])):
+            print(st["id"], "no daylight visible image at the frame time")
+        else:
+            Image.fromarray(img).save(os.path.join(out, "storms", st["id"], "storm_vis.jpg"), quality=88)
+            st["visible"] = True
+            print(st["id"], f"visible: {day:.0%} of the close-up in daylight")
+        # true colour for the last 6 hours of the loop, every 30 minutes, where the storm was in daylight; the page
+        # cross-fades between them while the infrared loop plays at 10-minute steps underneath
+        st.pop("visLoop", None); st.pop("visTimes", None)
+        vis_times = []
+        last = datetime.strptime(st["loopTimes"][-1], "%Y-%m-%dT%H:%MZ") if st.get("loopTimes") else frame
+        for k in range(12, -1, -1):
+            t = last - timedelta(minutes=30 * k)
+            if daylit(t, st["eye"]["lat"], st["eye"]["lon"]) < 0.05:
+                continue
             try:
-                im, _ = true_colour(sat, datetime.strptime(t, "%Y-%m-%dT%H:%MZ"), st["eye"]["lat"], st["eye"]["lon"])
+                im, day_t = true_colour(sat, t, st["eye"]["lat"], st["eye"]["lon"])
             except (FileNotFoundError, OSError) as e:
-                print("  loop stop", t, e); break
-            Image.fromarray(im).resize((1024, 1024), Image.LANCZOS).save(os.path.join(out, "storms", st["id"], "loop", f"v{i:02d}.jpg"), quality=88)
-            n += 1
-        if n == len(st.get("loopTimes", [])) and n > 1:
-            st["visLoop"] = n
+                print("  loop skip", t, e); continue
+            if day_t < 0.05:
+                continue
+            Image.fromarray(im).resize((1024, 1024), Image.LANCZOS).save(
+                os.path.join(out, "storms", st["id"], "loop", f"v{len(vis_times):02d}.jpg"), quality=88)
+            vis_times.append(t.strftime("%Y-%m-%dT%H:%MZ"))
+        if vis_times:
+            st["visTimes"] = vis_times
+        n = len(vis_times)
         print(st["id"], f"true-colour loop: {n} frames")
     json.dump(meta, open(path, "w"))
 
