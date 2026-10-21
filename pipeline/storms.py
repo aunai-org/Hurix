@@ -132,7 +132,8 @@ def goes_disc(sat, when):
 class Himawari:
     """Himawari-9 band 13 comes as 88 tiles of 550 px; only the tiles around a storm are fetched for past slots."""
     def __init__(self):
-        files = sorted(glob.glob(os.path.join(HERE, "hima", "*.nc")))
+        cur = os.path.join(HERE, "hima", "current")
+        files = sorted(glob.glob(os.path.join(HERE, "hima", open(cur).read().strip(), "*.nc"))) if os.path.exists(cur) else []
         if not files:
             raise FileNotFoundError("run fetch.sh first: Himawari tile layout is read from hima/")
         self.tiles = {}

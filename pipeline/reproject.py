@@ -75,7 +75,7 @@ here = os.path.dirname(os.path.abspath(__file__))
 g19 = goes(f"{here}/g19_c13.nc", f"{here}/g19_acha.nc")
 g18c, g18a = f"{here}/g18_c13.nc", f"{here}/g18_acha.nc"
 g18 = goes(g18c, g18a)
-hbt, hcos = himawari(f"{here}/hima")
+hbt, hcos = himawari(f"{here}/hima/" + open(f"{here}/hima/current").read().strip())
 
 # pick the satellite with the best view; feather seams by blending the two best within a small margin
 cands = [(g19[0], g19[1], g19[2]), (g18[0], g18[1], g18[2]), (hbt, np.full_like(hbt, np.nan), hcos)]
