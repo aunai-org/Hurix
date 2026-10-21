@@ -1,23 +1,26 @@
 #!/bin/sh
 # refresh-live.sh OUT_DIR  -> fetch the latest satellite slot, rebuild the site, and stage it for publishing.
-# Each run stages into a fresh folder OUT_DIR/<frame>-<timestamp>/ (nothing is deleted): site/ (the built page, no
-# _headers), batches/NN.json (maps of published path -> local path, at most 200 files each, so a host with a per-publish
+# Each run stages into a fresh folder OUT_DIR/run-<timestamp>/ and touches no tracked file (the pipeline writes the new
+# frame into that folder's data/, and its caches under pipeline/ are git-ignored): site/ (the built page, no _headers,
+# with the new data), batches/NN.json (maps of published path -> local path, at most 200 files each, so a host with a per-publish
 # file limit can upload them in turns) and files.json (every published path). The last line printed is that folder.
 # Used by the hourly refresh.
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p "$1"
-OUT=$(cd "$1" && pwd)
+STAGE=$(cd "$1" && pwd)/run-$(date -u +%Y%m%d%H%M%S)
+mkdir "$STAGE"
 python3 -m pip install -q -r pipeline/requirements.txt
 [ -d node_modules ] || npm ci --silent
-sh pipeline/run.sh
-npm run build --silent
-python3 - "$OUT" <<'EOF'
-import json, os, shutil, sys, time
-meta = json.load(open(os.path.join("dist", "data", "meta.json")))
-stage = os.path.join(sys.argv[1], meta["frame"].replace(":", "") + time.strftime("-%Y%m%d%H%M%S"))
-site = os.path.join(stage, "site")
-shutil.copytree("dist", site, ignore=lambda d, names: ["_headers"] if os.path.samefile(d, "dist") else [])
+DATA="$STAGE/data" sh pipeline/run.sh
+npm run build --silent -- --outDir "$STAGE/dist" --emptyOutDir false
+python3 - "$STAGE" <<'EOF'
+import json, os, shutil, sys
+stage = sys.argv[1]; dist = os.path.join(stage, "dist"); site = os.path.join(stage, "site")
+# the built page with the saved frame swapped for the new one
+shutil.copytree(dist, site, ignore=lambda d, names: ["_headers", "data"] if os.path.samefile(d, dist) else [])
+shutil.copytree(os.path.join(stage, "data"), os.path.join(site, "data"))
+meta = json.load(open(os.path.join(site, "data", "meta.json")))
 os.makedirs(os.path.join(stage, "batches"))
 paths = sorted(os.path.relpath(os.path.join(d, f), site) for d, _, fs in os.walk(site) for f in fs if f != "index.html")
 # data first, so the page's new code never goes live before the frames it expects
