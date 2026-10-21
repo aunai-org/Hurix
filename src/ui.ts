@@ -53,8 +53,8 @@ export function bindControls(globe: Globe, meta: Meta) {
   let st = storms[0], sel = 0;
   const hints = () => [
     `Infrared at 10.4 µm from three geostationary satellites, stitched at ${hhmm(frame)} ${dayStr(frame)}. Colder tops are higher.`,
-    `The real 2 km ${st.satellite} frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to orbit the storm; scroll out to spin the globe.`,
-    "A 3D cloud built from the same satellite frame: each cloud stands as tall as its top temperature implies.",
+    `The real 2 km ${st.satellite} frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to turn around the storm, right-drag (or two fingers) to slide across it, scroll out to spin the globe.`,
+    "A 3D cloud built from the same satellite frame: each cloud stands as tall as its top temperature implies. Drag to turn, right-drag (or two fingers) to slide.",
   ];
   const press = (attr: string, v: string) =>
     document.querySelectorAll<HTMLElement>(`[data-${attr}]`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[attr] === v)));

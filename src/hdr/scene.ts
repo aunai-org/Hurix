@@ -220,6 +220,9 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   };
   setBox();
 
+  // how far a pan can slide the view from the eye: most of the 2048 km close-up
+  const panOff = new THREE.Vector3(), PAN_MAX = 0.7 * HALF;
+
   // OrbitControls orbits around camera.up, fixed when it was built; in the 3D views "up" is the storm's own vertical
   const Y = new THREE.Vector3(0, 1, 0);
   const orbitAxis = (up: THREE.Vector3) => {
@@ -230,7 +233,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
 
   // point everything storm-specific at storm i
   const useStorm = (i: number) => {
-    cur = i;
+    cur = i; panOff.set(0, 0, 0);
     const st = storms[i];
     eye.copy(ll2v(st.eye.lat, st.eye.lon)).normalize();
     east.crossVectors(new THREE.Vector3(0, 1, 0), eye).normalize();
@@ -301,12 +304,24 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     }
     // zoomed in, a drag orbits the storm; scroll out and the pivot slides to the Earth's centre so the globe spins.
     // Close in, the camera can't drop below the storm's horizon (or into the globe).
+    // Close in, a right-drag (or two fingers) slides across the storm, kept to the storm's own patch.
     if (mode > 0) {
       const out = THREE.MathUtils.smoothstep(camera.position.length(), 1.5, 2.4);
-      if (!fly) controls.target.copy(eye).multiplyScalar(1 - out);
+      controls.enablePan = out < 0.5;
+      if (!fly) controls.target.copy(eye).addScaledVector(panOff, 1 - out).multiplyScalar(1 - out);
       controls.maxPolarAngle = THREE.MathUtils.lerp(1.32, Math.PI, out);
-    }
-    controls.update();
+      const before = controls.target.clone();
+      controls.update();
+      if (!fly && out < 1) {
+        // what the pan added this frame, kept in the storm's ground plane and within its patch
+        panOff.addScaledVector(controls.target.clone().sub(before), 1 / (1 - out));
+        panOff.addScaledVector(eye, -panOff.dot(eye));
+        if (panOff.length() > PAN_MAX) panOff.setLength(PAN_MAX);
+        // move the camera with the corrected target, so a clamped pan stops instead of tilting the view
+        const fixed = eye.clone().addScaledVector(panOff, 1 - out).multiplyScalar(1 - out);
+        camera.position.add(fixed.sub(controls.target)); controls.target.add(fixed);
+      }
+    } else controls.update();
     if (camera.position.length() < 1.012) camera.position.setLength(1.012);
     // studio light: a key light from upper left, slightly behind the viewer; real sun: the subsolar point at frame time
     if (!realSun) {
@@ -338,7 +353,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       flyTo(v.pos, v.target);
     },
     setMode(m) {
-      mode = m;
+      mode = m; panOff.set(0, 0, 0); controls.enablePan = false;
       resize();
       uni.patchOn.value = 1;
       imagery.visible = m === 0; patch.visible = m === 1; volBox.visible = m === 2;

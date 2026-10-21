@@ -258,7 +258,8 @@ The heights are a **model** built from real measurements. The satellite sees the
 
 - Drag to turn and scroll to zoom (three.js `OrbitControls`).
 - In the Imagery view you spin the whole globe.
-- In the 3D views, when you're close, you orbit around the storm's own vertical, and the camera can't drop below its horizon or into the globe. Scroll out and the pivot slides back to the Earth's centre, so the globe spins again.
+- In the 3D views, when you're close, you orbit around the storm's own vertical, and the camera can't drop below its horizon or into the globe.
+- Also in the 3D views, a right-drag (two fingers on a touch screen) slides the view across the storm, up to most of the way to the edge of its close-up. With several storms, the picker on the Storm card (or a click on a storm's label) moves the 3D views to another storm. Scroll out and the pivot slides back to the Earth's centre, so the globe spins again.
 - Switching view or storm flies the camera smoothly to a good starting angle.
 
 ## 10. Libraries and tools
