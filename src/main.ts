@@ -1,7 +1,7 @@
 // The stylesheet is linked from index.html so it applies before the first paint.
 import { loadMeta } from "./meta";
 import { createGlobe } from "./hdr/scene";
-import { bindControls, fillCard } from "./ui";
+import { bindControls } from "./ui";
 
 async function start() {
   const base = import.meta.env.BASE_URL;
@@ -9,7 +9,7 @@ async function start() {
   const prog = document.getElementById("prog") as HTMLProgressElement;
   try {
     const meta = await loadMeta(base);
-    fillCard(meta);
+    if (!meta.storms.length) throw new Error("no storms in data/meta.json");
     const globe = createGlobe(document.getElementById("gl") as HTMLCanvasElement, meta, base, (f) => (prog.value = f), () => {
       loading.style.opacity = "0";
       setTimeout(() => (loading.hidden = true), 900);

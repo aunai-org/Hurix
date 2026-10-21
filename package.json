@@ -1,5 +1,5 @@
 {
-  "name": "hurix",
+  "name": "hurrix",
   "version": "0.1.0",
   "private": true,
   "description": "Tropical cyclones on a 3D globe, from live infrared satellite imagery, with 3D cloud-top and volumetric storm views.",

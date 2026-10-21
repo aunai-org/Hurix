@@ -12,5 +12,6 @@ fi
 echo "frame $F"
 ./fetch.sh "$F"
 python3 -W ignore reproject.py 4096
-FRAME=$F python3 -W ignore storm.py
-FRAME=$F python3 -W ignore export.py ../public/data
+python3 -W ignore export.py ../public/data
+FRAME=$F python3 -W ignore storms.py ../public/data
+FRAME=$F python3 -W ignore visible.py ../public/data

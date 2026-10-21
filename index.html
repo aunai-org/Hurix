@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="theme-color" content="#000000">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <title>Hurix</title>
+    <title>Hurrix</title>
     <meta name="description" content="Tropical cyclones on a 3D globe, from live infrared satellite imagery.">
     <link rel="stylesheet" href="/src/style.css">
   </head>
@@ -13,38 +13,52 @@
     <canvas id="gl" aria-label="3D globe with live infrared satellite imagery and a tropical cyclone"></canvas>
 
     <div class="brand">
-      <b>HURIX</b>
+      <b>HURRIX</b>
       <span><span class="live"><i></i>LIVE IR</span> · Himawari-9 · GOES-18 · GOES-19</span>
     </div>
 
-    <section class="card panel" aria-label="Selected storm">
-      <div class="eyebrow">Tropical cyclone · from satellite only</div>
+    <nav class="drawer-tabs" aria-label="Panels">
+      <button type="button" class="drawer-tab" id="cardtoggle" aria-expanded="false" aria-controls="card"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span>Storm</span></button>
+      <button type="button" class="drawer-tab" id="legendtoggle" aria-expanded="false" aria-controls="legend"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span>Legend</span></button>
+    </nav>
+    <div class="drawers">
+    <section class="card panel" id="card" aria-label="Selected storm" data-open="false">
+      <div class="seg storm-pick" id="stormpick" role="group" aria-label="Storms" hidden></div>
+      <div class="eyebrow" id="card-eyebrow">Tropical cyclone · from satellite only</div>
       <h1 id="card-title">…</h1>
-      <dl class="grid">
-        <dt>Eye fix</dt><dd id="fix">…</dd>
-        <dt>Moving</dt><dd id="motion">…</dd>
-        <dt>Eye</dt><dd id="eyed">…</dd>
-        <dt>Eyewall tops</dt><dd id="tops">…</dd>
-        <dt>Cloud shield</dt><dd id="cdo">…</dd>
-        <dt>Intensity</dt><dd class="est" id="vmax">…</dd>
-      </dl>
-      <div class="sep"></div>
-      <dl class="grid more">
-        <dt>Track</dt><dd id="trackinfo">…</dd>
-        <dt>Name</dt><dd><small>Needs the JTWC feed, which isn't wired in yet</small></dd>
-      </dl>
+      <p class="peek" id="peek"></p>
+      <div id="cardbody">
+        <dl class="grid">
+          <dt>Eye fix</dt><dd id="fix">…</dd>
+          <dt>Moving</dt><dd id="motion">…</dd>
+          <dt>Eye</dt><dd id="eyed">…</dd>
+          <dt>Eyewall tops</dt><dd id="tops">…</dd>
+          <dt>Cloud shield</dt><dd id="cdo">…</dd>
+          <dt>Intensity</dt><dd class="est" id="vmax">…</dd>
+        </dl>
+        <div class="sep"></div>
+        <dl class="grid more">
+          <dt>Track</dt><dd id="trackinfo">…</dd>
+          <dt>Name</dt><dd><small>Needs the JTWC feed, which isn't wired in yet</small></dd>
+        </dl>
+      </div>
     </section>
 
-    <aside class="legend panel" aria-label="Legend">
-      <div class="eyebrow">Cloud-top temperature</div>
-      <div class="ramp"></div>
-      <div class="ticks"><span>+20</span><span>−20</span><span>−50</span><span>−70</span><span>−85 °C</span></div>
+    <aside class="legend panel" id="legend" aria-label="Legend" data-open="false">
+      <div class="eyebrow" id="legend-title">Cloud-top temperature</div>
+      <div id="legendbody">
+      <div class="ramp" id="ramp"></div>
+      <div class="ticks" id="ticks"></div>
+      <div class="hint" id="stylehint"></div>
       <div class="row"><span class="dot"></span>Eye visible in IR</div>
       <div class="row"><span class="ring"></span>Centre from cloud mass (no clear eye)</div>
       <div class="sep"></div>
       <div class="hint" id="modehint"></div>
+      <div class="hint" id="sunhint" hidden></div>
       <div class="hint">Europe, Africa and the Indian Ocean show archival clouds. Meteosat isn't in this feed yet.</div>
+      </div>
     </aside>
+    </div>
 
     <div class="bar panel" role="toolbar" aria-label="View controls">
       <div class="seg" role="group" aria-label="View">
@@ -52,20 +66,21 @@
         <button type="button" data-mode="1" aria-pressed="false">3D cloud tops</button>
         <button type="button" data-mode="2" aria-pressed="false">3D storm</button>
       </div>
-      <div class="seg" role="group" aria-label="Infrared colours">
-        <button type="button" data-pal="0" aria-pressed="false">Grey</button>
-        <button type="button" data-pal="1" aria-pressed="true">Enhanced</button>
+      <div class="seg" role="group" aria-label="Imagery style">
+        <button type="button" data-style="0" aria-pressed="true" title="Real true-colour picture from the satellite's visible channels (daylight only); infrared elsewhere">Visible</button>
+        <button type="button" data-style="1" aria-pressed="false" title="Infrared coloured by cloud-top temperature: the colder (higher) the top, the stronger the storm">Infra</button>
+        <button type="button" data-style="2" aria-pressed="false" title="Infrared clouds over a blue sea: cold cores in soft grey, edges bright">Blue</button>
       </div>
       <div class="seg" role="group" aria-label="Lighting">
         <button type="button" data-light="0" aria-pressed="true">Studio</button>
         <button type="button" data-light="1" aria-pressed="false">Real sun</button>
       </div>
+      <div class="seg" role="group" aria-label="Track">
+        <button type="button" id="track" aria-pressed="false" title="Show or hide the storm tracks and eye markers">Track</button>
+      </div>
       <button type="button" class="icon" id="play" aria-label="Play the 3-hour loop" title="Play the 3-hour loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playicon" d="M7 4.5v15l12-7.5z"></path></svg></button>
       <div class="time" id="time">…</div>
       <label class="slider" id="exagwrap" for="exag">Height ×<span id="exagv">14</span><input id="exag" type="range" min="4" max="40" value="14"></label>
-      <div class="seg" role="group" aria-label="Cutaway" id="cutwrap">
-        <button type="button" id="cut" aria-pressed="false">Cutaway</button>
-      </div>
     </div>
 
     <div id="labels" aria-hidden="true"></div>

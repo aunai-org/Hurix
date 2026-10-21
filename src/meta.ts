@@ -1,8 +1,10 @@
 // Everything about the frame comes from data/meta.json, written by pipeline/export.py.
 
-export interface Meta {
-  /** Frame time, "YYYY-MM-DDTHH:MMZ". */
-  frame: string;
+/** One storm, as measured from its own 2 km close-up. */
+export interface Storm {
+  id: string;
+  /** The satellite its close-up and track come from. */
+  satellite: string;
   loopFrames: number;
   /** Time of each loop frame (older pipelines left this out; the frames were then 10 minutes apart). */
   loopTimes?: string[];
@@ -15,12 +17,28 @@ export interface Meta {
   motion: { kt: number; bearing: number; hours: number };
   /** [time, lat, lon, eye visible (1) or centre from cloud mass (0)], oldest first. */
   track: [string, number, number, number][];
+  /** True when the pipeline cut a 1 km true-colour close-up (storm_vis.jpg) from a daylight frame. */
+  visible?: boolean;
+  /** Number of true-colour loop frames (loop/vNN.jpg), one per infrared loop frame, when the whole loop was daylit. */
+  visLoop?: number;
+  /** Folder of its close-up and loop, relative to the site root. */
+  dir: string;
+}
+
+export interface Meta {
+  /** Frame time, "YYYY-MM-DDTHH:MMZ". */
+  frame: string;
+  /** Strongest first. */
+  storms: Storm[];
 }
 
 export async function loadMeta(base: string): Promise<Meta> {
   const res = await fetch(`${base}data/meta.json`);
   if (!res.ok) throw new Error(`data/meta.json: HTTP ${res.status}`);
-  return (await res.json()) as Meta;
+  const raw = await res.json();
+  // the first pipeline wrote one storm at the top level, with its files directly in data/
+  if (!raw.storms) return { frame: raw.frame, storms: [{ ...raw, id: "s1", satellite: "Himawari-9", dir: "data/" }] };
+  return { frame: raw.frame, storms: (raw.storms as Omit<Storm, "dir">[]).map((s) => ({ ...s, dir: `data/storms/${s.id}/` })) };
 }
 
 export const frameDate = (meta: Meta) => new Date(meta.frame.replace("Z", ":00Z"));
