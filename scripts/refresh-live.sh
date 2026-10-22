@@ -4,7 +4,7 @@
 # frame into that folder's data/, and its caches under pipeline/ are git-ignored): site/ (the built page, no _headers,
 # with the new data), batches/NN.json (maps of published path -> local path, at most 200 files each, so a host with a per-publish
 # file limit can upload them in turns) and files.json (every published path). The last line printed is that folder.
-# Used by the hourly refresh.
+# Used by .github/workflows/refresh.yml, which uploads site/ to Cloudflare Pages every hour.
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p "$1"
