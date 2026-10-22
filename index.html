@@ -78,7 +78,12 @@
       <div class="seg" role="group" aria-label="Track">
         <button type="button" id="track" aria-pressed="false" title="Show or hide the storm tracks and eye markers">Track</button>
       </div>
-      <button type="button" class="icon" id="play" aria-label="Play the 3-hour loop" title="Play the 3-hour loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playicon" d="M7 4.5v15l12-7.5z"></path></svg></button>
+      <button type="button" class="icon" id="play" aria-label="Play the last 6 hours" title="Play the loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playicon" d="M7 4.5v15l12-7.5z"></path></svg></button>
+      <div class="seg range" role="group" aria-label="Loop length" id="rangewrap">
+        <button type="button" data-range="6" aria-pressed="true" title="Play the last 6 hours, every 10 minutes">6 h</button>
+        <button type="button" data-range="12" aria-pressed="false" title="Play the last 12 hours, every 30 minutes">12 h</button>
+        <button type="button" data-range="24" aria-pressed="false" title="Play the last 24 hours, every 30 minutes">24 h</button>
+      </div>
       <div class="time" id="time">…</div>
       <label class="slider" id="exagwrap" for="exag">Height ×<span id="exagv">14</span><input id="exag" type="range" min="4" max="40" value="14"></label>
     </div>

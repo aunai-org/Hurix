@@ -1,4 +1,4 @@
-"""Find the active tropical cyclones in the stitched IR map, track each one back 48 h, and cut its 2 km close-up and loop.
+"""Find the active tropical cyclones in the stitched IR map, track each one back 48 h, and cut its 2 km close-up and 24 h loop.
 
 Each close-up is resampled onto the same tangent-plane grid the 3D views use (2048 km square, centred on the eye, north
 up), from whichever geostationary satellite sees the storm best: Himawari-9, GOES-18 or GOES-19.
@@ -132,7 +132,8 @@ def goes_disc(sat, when):
 class Himawari:
     """Himawari-9 band 13 comes as 88 tiles of 550 px; only the tiles around a storm are fetched for past slots."""
     def __init__(self):
-        files = sorted(glob.glob(os.path.join(HERE, "hima", "*.nc")))
+        cur = os.path.join(HERE, "hima", "current")
+        files = sorted(glob.glob(os.path.join(HERE, "hima", open(cur).read().strip(), "*.nc"))) if os.path.exists(cur) else []
         if not files:
             raise FileNotFoundError("run fetch.sh first: Himawari tile layout is read from hima/")
         self.tiles = {}
@@ -227,6 +228,12 @@ def candidates(stitched):
         if all(np.hypot(la - o[0], (lo - o[1]) * np.cos(np.radians(la))) > 4 for o in out):  # one peak per system
             out.append((la, lo, float(core[y, x])))
     return out
+
+
+def loop_times(frame):
+    """The loop's frames, oldest first: every 30 minutes from 24 h back to 6 h back, then every 10 minutes to the frame.
+    The page plays 12 and 24 hours from the 30-minute frames and 6 hours from all of them."""
+    return [frame - timedelta(minutes=30 * k) for k in range(48, 12, -1)] + [frame - timedelta(minutes=10 * k) for k in range(36, -1, -1)]
 
 
 def best_sat(lat, lon):
@@ -327,14 +334,13 @@ def main():
         Image.fromarray((code(crop) * 255 + 0.5).astype(np.uint8)).save(os.path.join(folder, "storm_ir.png"), optimize=True)
         eye_k, ring_k, eye_d, cdo_r = measure(crop)
         times, n = [], 0
-        for k in range(17, -1, -1):  # 3-hour loop at 10-minute steps, on the same grid as the close-up
-            when = frame - timedelta(minutes=10 * k)
+        for when in loop_times(frame):  # on the same grid as the close-up
             try:
                 im = closeup(s["sat"], when, eye["lat"], eye["lon"])
             except (FileNotFoundError, OSError) as e:
                 print("  loop skip", when, e); continue
             Image.fromarray((code(np.nan_to_num(im, nan=290.0)) * 255 + 0.5).astype(np.uint8)) \
-                .save(os.path.join(folder, "loop", f"f{n:02d}.jpg"), quality=94)
+                .save(os.path.join(folder, "loop", f"f{n:02d}.jpg"), quality=92)
             n += 1; times.append(when.strftime("%Y-%m-%dT%H:%MZ"))
         meta_storms.append({
             "id": sid, "satellite": SAT_NAMES[s["sat"]], "eye": {"lat": eye["lat"], "lon": eye["lon"]},

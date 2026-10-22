@@ -122,13 +122,13 @@ This is the detective work. A storm is found by its shape in the infrared pictur
 5. **Is it a storm?** Only centres that held together for at least 24 hours count. That filters out ordinary thunderstorm clusters, which come and go within hours.
 6. **Rank.** Keep up to four storms, strongest first (coldest eyewall, with a bonus for a clear eye).
 7. **Measure.** For each storm: eye temperature, eyewall temperature, eye diameter, the radius of the central cold cloud shield, and its motion over the last day.
-8. **Cut the close-up.** A 2048 km square at 2 km per pixel (`storm_ir.png`, 1024 × 1024), plus 18 frames covering the last 3 hours (`loop/f00.jpg` to `f17.jpg`).
+8. **Cut the close-up and the loop.** A 2048 km square at 2 km per pixel (`storm_ir.png`, 1024 × 1024), plus up to 73 loop frames on the same grid (`loop/f00.jpg` onward): every 30 minutes from 24 hours back to 6 hours back, then every 10 minutes up to the frame. The page plays 6 hours from all the recent frames, and 12 or 24 hours from the 30-minute ones.
 
 **The close-up grid.** Close-ups use a *gnomonic* (tangent-plane) projection centred on the eye: a flat square that touches the globe at the storm's centre. Straight lines in it are great circles on the globe, and distortion is tiny over 2000 km. All storm images (infrared, true colour, loop) use the same grid, so they line up pixel for pixel, and the 3D views reuse it too.
 
 ### 4.5 True colour (`visible.py`)
 
-For each storm it builds a true-colour close-up at 1 km per pixel (`storm_vis.jpg`, 2048 × 2048), plus a true-colour frame for each loop step (`loop/v00.jpg` to `v17.jpg`, 1024 × 1024).
+For each storm it builds a true-colour close-up at 1 km per pixel (`storm_vis.jpg`, 2048 × 2048), plus true-colour loop frames every 30 minutes over the last 6 hours wherever the storm was in daylight (`loop/v00.jpg` onward, 1024 × 1024). While the 6-hour loop plays, the page blends between them by time underneath the 10-minute infrared frames; if night falls inside that span, the loop plays in infrared.
 
 1. **Read only what's needed.** GOES visible files are large (band 2 is about 200 MB per full disk), so the code reads just the window around the storm. For Himawari it downloads only the tiles that cover the storm.
 2. **Resample** each band onto the storm's close-up grid.
@@ -137,6 +137,10 @@ For each storm it builds a true-colour close-up at 1 km per pixel (`storm_vis.jp
 5. **Tone curve.** A gentle gamma (1/1.9) makes it look natural on screen.
 
 Where the sun was down, there's no visible picture, so the page shows infrared there instead. If any loop frame fails, the loop falls back to infrared.
+
+### 4.6 The whole-globe loop (`globe.py`)
+
+So that every cloud on the globe moves while the loop plays, not only the storm, this step stitches the whole world once an hour over the last 24 hours. It downloads the three satellites' full disks for each hour (Himawari's 88 tiles included), averages each satellite's 2 km pixels into 8 km blocks, and maps them onto a 2048 × 1024 world map the same way `reproject.py` does, with the same archive clouds in the Meteosat gap. The frames are written as `globe/g00.jpg` onward, and their times go into `meta.json` as `globeTimes`. The hours are stitched three at a time, in separate processes, and take a few minutes in all.
 
 ## 5. The files the page loads
 
@@ -149,8 +153,9 @@ Everything lives in `public/data/`:
 | `ir_live_mask.png` | 1024 × 512 | White where the data is live, black where it's archive |
 | `storms/sN/storm_ir.png` | 1024 × 1024 | The storm's infrared close-up (2 km per pixel) |
 | `storms/sN/storm_vis.jpg` | 2048 × 2048 | The storm's true-colour close-up (1 km per pixel), if it was daytime |
-| `storms/sN/loop/fNN.jpg` | 1024 × 1024 | Infrared loop frames, 10 minutes apart |
-| `storms/sN/loop/vNN.jpg` | 1024 × 1024 | True-colour loop frames, if the whole loop was in daylight |
+| `storms/sN/loop/fNN.jpg` | 1024 × 1024 | Infrared loop frames over the last 24 hours (30 minutes apart, 10 minutes in the last 6 hours) |
+| `storms/sN/loop/vNN.jpg` | 1024 × 1024 | True-colour loop frames, every 30 minutes over the last 6 hours, daylight only |
+| `globe/gNN.jpg` | 2048 × 1024 | Whole-globe infrared, once an hour over the last 24 hours (the frame itself is `ir_global.jpg`) |
 
 **How temperatures are stored.** An image pixel holds 0–255, so infrared images store a *code* instead of a temperature:
 
@@ -173,11 +178,11 @@ That covers 180 K to 320 K (−93 °C to +47 °C), more than any real cloud or s
   "eyeDiameterKm": 50,
   "cdoRadiusKm": 231,     // radius of the central cold cloud shield
   "motion": { "kt": 11.1, "bearing": 297, "hours": 21 },
-  "loopFrames": 18,
+  "loopFrames": 73,
   "loopTimes": ["2026-10-20T02:50Z", "…"],
   "track": [["2026-10-18T23:40Z", 13.37, 139.74, 0], "…"],   // time, lat, lon, 1 if the eye was clear
   "visible": true,        // storm_vis.jpg exists
-  "visLoop": 18           // the true-colour loop exists
+  "visTimes": ["2026-10-20T00:00Z", "…"]   // times of the true-colour loop frames, if any
 }
 ```
 
@@ -194,7 +199,7 @@ From the inside out:
 | Layer | Shader | What it does |
 | --- | --- | --- |
 | Earth | `EARTH` | Blue Marble by day, city lights at night, with the land/water mask and terrain bumps for relief |
-| Clouds | `CLOUDS` | The global infrared layer on a shell just above the ground. Each pixel's code becomes a temperature, then an opacity (warm sea is clear, cold tops are solid) and a colour from the current style. Clouds cast a soft shadow on the ground. |
+| Clouds | `CLOUDS` | The global infrared layer on a shell just above the ground. Each pixel's code becomes a temperature, then an opacity (warm sea is clear, cold tops are solid) and a colour from the current style. Clouds cast a soft shadow on the ground. While the loop plays, it blends the two hourly globe frames either side of the moment, so the clouds move everywhere. |
 | Imagery patch | `IMAGERY` | The selected storm's sharp close-up, draped over the globe (Imagery view only). Its edges fade into the global clouds, so there's no square seam. |
 | Atmosphere | `ATMOSPHERE` | A faint blue rim that fades softly into space |
 | Sky | `SKY` | The star background |
@@ -258,7 +263,8 @@ The heights are a **model** built from real measurements. The satellite sees the
 
 - Drag to turn and scroll to zoom (three.js `OrbitControls`).
 - In the Imagery view you spin the whole globe.
-- In the 3D views, when you're close, you orbit around the storm's own vertical, and the camera can't drop below its horizon or into the globe. Scroll out and the pivot slides back to the Earth's centre, so the globe spins again.
+- In the 3D views, when you're close, you orbit around the storm's own vertical, and the camera can't drop below its horizon or into the globe.
+- Also in the 3D views, a right-drag (two fingers on a touch screen) slides the view across the storm, up to most of the way to the edge of its close-up. With several storms, the picker on the Storm card (or a click on a storm's label) moves the 3D views to another storm. Scroll out and the pivot slides back to the Earth's centre, so the globe spins again.
 - Switching view or storm flies the camera smoothly to a good starting angle.
 
 ## 10. Libraries and tools

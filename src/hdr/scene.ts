@@ -7,7 +7,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME, VOLUME_BLEND } from "./glsl";
-import { dvorak, frameDate, subsolar, type Meta, type Storm } from "../meta";
+import { dvorak, frameDate, isoMs, subsolar, type Meta, type Storm } from "../meta";
 
 export type Mode = 0 | 1 | 2;
 /** 0 = Visible, 1 = Infra, 2 = Blue. */
@@ -30,7 +30,9 @@ export interface Globe {
   setRealSun(on: boolean): void;
   setHeight(exag: number): void;
   setTrack(on: boolean): void;
-  /** Loop position in frames, or null for the latest full-quality frame. */
+  /** Loads the loop frames at these indices (and the true-colour frames in their time span) before they play. */
+  prepareLoop(frames: number[]): Promise<void>;
+  /** Loop position along the prepared frames (fractional), or null for the latest full-quality frame. */
   setLoop(t: number | null): void;
   /** Called every frame after rendering, with the current mode. */
   onFrame(fn: (mode: Mode, dt: number) => void): void;
@@ -92,22 +94,48 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     ir: tex("data/ir_global.jpg", false),
     live: tex("data/ir_live_mask.png", false),
   };
-  // each storm's close-up and loop, loaded the first time it is selected
-  const stormTex = new Map<string, { still: THREE.Texture; loop: THREE.Texture[]; vis: THREE.Texture | null; visLoop: THREE.Texture[] }>();
+  // each storm's close-up, loaded the first time it is selected; its loop frames load when a loop is first played
+  type StormTex = { still: THREE.Texture; vis: THREE.Texture | null; loop: Promise<THREE.Texture>[]; visLoop: Promise<THREE.Texture>[] };
+  const stormTex = new Map<string, StormTex>();
+  const clamp = <X extends THREE.Texture>(x: X) => { x.wrapS = x.wrapT = THREE.ClampToEdgeWrapping; return x; };
   const texFor = (s: Storm) => {
     let t = stormTex.get(s.id);
     if (!t) {
-      const clamp = (x: THREE.Texture) => { x.wrapS = x.wrapT = THREE.ClampToEdgeWrapping; return x; };
       t = {
         still: clamp(tex(`${s.dir}storm_ir.png`, false)),
-        loop: Array.from({ length: s.loopFrames }, (_, i) => clamp(tex(`${s.dir}loop/f${String(i).padStart(2, "0")}.jpg`, false))),
         vis: s.visible ? clamp(tex(`${s.dir}storm_vis.jpg`, true)) : null,
-        visLoop: Array.from({ length: s.visible ? s.visLoop ?? 0 : 0 }, (_, i) => clamp(tex(`${s.dir}loop/v${String(i).padStart(2, "0")}.jpg`, true))),
+        loop: [], visLoop: [],
       };
       stormTex.set(s.id, t);
     }
     return t;
   };
+  // infrared frames are greyscale: keep one channel on the GPU (a quarter of the memory), so a 24-hour loop fits on phones
+  const redTexture = async (url: string) => {
+    const img = await createImageBitmap(await (await fetch(url)).blob());
+    const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+    const g = c.getContext("2d", { willReadFrequently: true })!; g.drawImage(img, 0, 0);
+    const rgba = g.getImageData(0, 0, img.width, img.height).data, w = img.width, h = img.height;
+    const red = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) red[(h - 1 - y) * w + x] = rgba[(y * w + x) * 4];  // flip, like image textures
+    const t = new THREE.DataTexture(red, w, h, THREE.RedFormat, THREE.UnsignedByteType);
+    t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = true;
+    t.anisotropy = maxAniso; t.needsUpdate = true;
+    return clamp(t);
+  };
+  const colourTexture = (url: string) => new Promise<THREE.Texture>((ok, fail) => new THREE.TextureLoader().load(url, (t) => {
+    t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso; ok(clamp(t));
+  }, undefined, fail));
+  const pad = (i: number) => String(i).padStart(2, "0");
+  const loopFrame = (s: Storm, i: number) => (texFor(s).loop[i] ??= redTexture(`${base}${s.dir}loop/f${pad(i)}.jpg`));
+  const visFrame = (s: Storm, i: number) => (texFor(s).visLoop[i] ??= colourTexture(`${base}${s.dir}loop/v${pad(i)}.jpg`));
+  // the whole globe's hourly infrared frames, oldest first; the frame itself is the full-size ir_global.jpg
+  const globeMs = [...(meta.globeTimes ?? []).map(isoMs), FRAME.getTime()];
+  const globeTex: Promise<THREE.Texture>[] = [];
+  const globeFrame = (i: number) => i === globeMs.length - 1 ? Promise.resolve(T.ir) : (globeTex[i] ??= redTexture(`${base}data/globe/g${pad(i)}.jpg`));
+  // the prepared loop: infrared frames with their times, and the true-colour frames covering the same span (if any)
+  let loopIR: THREE.Texture[] = [], loopMs: number[] = [], loopVis: THREE.Texture[] = [], loopVisMs: number[] = [];
+  let loopGlobe: THREE.Texture[] = [], loopGlobeMs: number[] = [];
   const rmwOf = (s: Storm) => Math.max(15, (s.eyeDiameterKm ?? 30) * 0.65);
 
   // ---------- uniforms shared by every material ----------
@@ -129,7 +157,11 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     frameA: { value: first.still },
     frameB: { value: first.still },
     frameMix: { value: 1 },
+    visMix: { value: 0 },
     exag: { value: 14 },
+    ir: { value: T.ir as THREE.Texture },
+    irB: { value: T.ir as THREE.Texture },
+    irMix: { value: 0 },
     realSun: { value: 0 },
     rmw: { value: 30 },
     vmax: { value: 100 },
@@ -140,12 +172,12 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     side: THREE.BackSide, depthWrite: false, uniforms: { map: { value: T.sky } }, vertexShader: SKY.vertex, fragmentShader: SKY.fragment,
   })));
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 256, 128), new THREE.ShaderMaterial({
-    uniforms: { ...uni, day: { value: T.day }, night: { value: T.night }, water: { value: T.water }, topo: { value: T.topo }, ir: { value: T.ir } },
+    uniforms: { ...uni, day: { value: T.day }, night: { value: T.night }, water: { value: T.water }, topo: { value: T.topo } },
     vertexShader: EARTH.vertex, fragmentShader: EARTH.fragment,
   })));
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.0045, 256, 128), new THREE.ShaderMaterial({
     transparent: true, depthWrite: false,
-    uniforms: { ...uni, ir: { value: T.ir }, live: { value: T.live } },
+    uniforms: { ...uni, live: { value: T.live } },
     vertexShader: CLOUDS.vertex, fragmentShader: CLOUDS.fragment,
   })));
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.06, 128, 64), new THREE.ShaderMaterial({
@@ -220,6 +252,9 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   };
   setBox();
 
+  // how far a pan can slide the view from the eye: most of the 2048 km close-up
+  const panOff = new THREE.Vector3(), PAN_MAX = 0.7 * HALF;
+
   // OrbitControls orbits around camera.up, fixed when it was built; in the 3D views "up" is the storm's own vertical
   const Y = new THREE.Vector3(0, 1, 0);
   const orbitAxis = (up: THREE.Vector3) => {
@@ -230,7 +265,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
 
   // point everything storm-specific at storm i
   const useStorm = (i: number) => {
-    cur = i;
+    cur = i; panOff.set(0, 0, 0);
     const st = storms[i];
     eye.copy(ll2v(st.eye.lat, st.eye.lon)).normalize();
     east.crossVectors(new THREE.Vector3(0, 1, 0), eye).normalize();
@@ -240,13 +275,14 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     uni.rmw.value = rmwOf(st);
     uni.vmax.value = dvorak(st.eyeK, st.ringK).kt;
     const t = texFor(st);
-    uni.frameA.value = t.loop[t.loop.length - 1] ?? t.still; uni.frameB.value = t.still; uni.frameMix.value = 1;
+    uni.frameA.value = uni.frameB.value = t.still; uni.frameMix.value = 1;
+    loopIR = []; loopVis = [];
     uni.vis.value = uni.visB.value = t.vis ?? t.still;
     syncVis();
     if (mode > 0) orbitAxis(eye);
   };
   // the loop plays in true colour when the pipeline cut one; otherwise it plays in infrared
-  function syncVis() { const t = texFor(storms[cur]); uni.visOn.value = style === 0 && t.vis && (!playing || t.visLoop.length > 1) ? 1 : 0; }
+  function syncVis() { const t = texFor(storms[cur]); uni.visOn.value = style === 0 && (playing ? loopVis.length > 1 : !!t.vis) ? 1 : 0; }
   useStorm(0);
 
   // ---------- camera moves ----------
@@ -301,12 +337,24 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     }
     // zoomed in, a drag orbits the storm; scroll out and the pivot slides to the Earth's centre so the globe spins.
     // Close in, the camera can't drop below the storm's horizon (or into the globe).
+    // Close in, a right-drag (or two fingers) slides across the storm, kept to the storm's own patch.
     if (mode > 0) {
       const out = THREE.MathUtils.smoothstep(camera.position.length(), 1.5, 2.4);
-      if (!fly) controls.target.copy(eye).multiplyScalar(1 - out);
+      controls.enablePan = out < 0.5;
+      if (!fly) controls.target.copy(eye).addScaledVector(panOff, 1 - out).multiplyScalar(1 - out);
       controls.maxPolarAngle = THREE.MathUtils.lerp(1.32, Math.PI, out);
-    }
-    controls.update();
+      const before = controls.target.clone();
+      controls.update();
+      if (!fly && out < 1) {
+        // what the pan added this frame, kept in the storm's ground plane and within its patch
+        panOff.addScaledVector(controls.target.clone().sub(before), 1 / (1 - out));
+        panOff.addScaledVector(eye, -panOff.dot(eye));
+        if (panOff.length() > PAN_MAX) panOff.setLength(PAN_MAX);
+        // move the camera with the corrected target, so a clamped pan stops instead of tilting the view
+        const fixed = eye.clone().addScaledVector(panOff, 1 - out).multiplyScalar(1 - out);
+        camera.position.add(fixed.sub(controls.target)); controls.target.add(fixed);
+      }
+    } else controls.update();
     if (camera.position.length() < 1.012) camera.position.setLength(1.012);
     // studio light: a key light from upper left, slightly behind the viewer; real sun: the subsolar point at frame time
     if (!realSun) {
@@ -338,7 +386,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       flyTo(v.pos, v.target);
     },
     setMode(m) {
-      mode = m;
+      mode = m; panOff.set(0, 0, 0); controls.enablePan = false;
       resize();
       uni.patchOn.value = 1;
       imagery.visible = m === 0; patch.visible = m === 1; volBox.visible = m === 2;
@@ -360,17 +408,48 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     },
     setHeight(exag) { uni.exag.value = exag; setBox(); },
     setTrack(on) { showTrack = on; trackGroup.visible = mode === 0 && on; },
+    async prepareLoop(frames) {
+      const st = storms[cur], ms = frames.map((i) => isoMs(st.loopTimes[i]));
+      const ir = await Promise.all(frames.map((i) => loopFrame(st, i)));
+      // true colour plays only if its 30-minute frames cover the whole span without a gap (no night in between)
+      const vt = (st.visTimes ?? []).map(isoMs), span = vt.map((t, i) => [t, i] as const).filter(([t]) => t >= ms[0] - 60e3);
+      const covered = span.length > 1 && span[0][0] <= ms[0] + 60e3 && span[span.length - 1][0] >= ms[ms.length - 1] - 60e3
+        && span.every(([t], k) => k === 0 || t - span[k - 1][0] <= 31 * 60e3);
+      const vis = covered ? await Promise.all(span.map(([, i]) => visFrame(st, i))).catch(() => []) : [];
+      // the whole globe moves too: its hourly frames from the last one at or before the loop's start
+      let g0 = globeMs.length - 1; while (g0 > 0 && globeMs[g0] > ms[0]) g0--;
+      const gi = globeMs.map((_, i) => i).slice(g0);
+      const globe = gi.length > 1 ? await Promise.all(gi.map(globeFrame)).catch(() => []) : [];
+      if (st !== storms[cur]) return;
+      loopIR = ir; loopMs = ms; loopVis = vis; loopVisMs = vis.length ? span.map(([t]) => t) : [];
+      loopGlobe = globe; loopGlobeMs = globe.length ? gi.map((i) => globeMs[i]) : [];
+      syncVis();
+    },
     setLoop(t) {
-      const { still, loop, vis, visLoop } = texFor(storms[cur]), n = loop.length;
+      const { still, vis } = texFor(storms[cur]), n = loopIR.length;
       if (playing !== (t !== null)) { playing = t !== null; syncVis(); }
       if (t === null || n < 2) {
-        uni.frameA.value = loop[n - 1] ?? still; uni.frameB.value = still; uni.frameMix.value = 1;
+        uni.frameA.value = uni.frameB.value = still; uni.frameMix.value = 1;
         uni.vis.value = uni.visB.value = vis ?? still;
+        uni.ir.value = uni.irB.value = T.ir; uni.irMix.value = 0;
         return;
       }
-      const i = Math.floor(t) % n, j = (i + 1) % n;
-      uni.frameA.value = loop[i]; uni.frameB.value = loop[j]; uni.frameMix.value = t - Math.floor(t);
-      if (visLoop.length === n) { uni.vis.value = visLoop[i]; uni.visB.value = visLoop[j]; }
+      const i = Math.floor(t) % n, j = (i + 1) % n, f = t - Math.floor(t);
+      uni.frameA.value = loopIR[i]; uni.frameB.value = loopIR[j]; uni.frameMix.value = j === 0 ? 0 : f;
+      const now = loopMs[i] + (j === 0 ? 0 : (loopMs[j] - loopMs[i]) * f);
+      // frames further apart than the infrared ones (true colour every 30 minutes, the globe every hour): blend the pair either side
+      const pair = (times: number[]) => {
+        let k = 0; while (k < times.length - 2 && times[k + 1] <= now) k++;
+        return [k, THREE.MathUtils.clamp((now - times[k]) / (times[k + 1] - times[k]), 0, 1)] as const;
+      };
+      if (loopVis.length > 1) {
+        const [k, m] = pair(loopVisMs);
+        uni.vis.value = loopVis[k]; uni.visB.value = loopVis[k + 1]; uni.visMix.value = m;
+      }
+      if (loopGlobe.length > 1) {
+        const [k, m] = pair(loopGlobeMs);
+        uni.ir.value = loopGlobe[k]; uni.irB.value = loopGlobe[k + 1]; uni.irMix.value = m;
+      }
     },
     onFrame(fn) { listeners.push(fn); },
   };

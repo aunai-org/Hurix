@@ -1,7 +1,7 @@
 // The card, the storm picker, the legend, the control bar and the place labels. Everything shown is measured from the
 // frame in meta.json.
 import * as THREE from "three";
-import { dayStr, degC, dvorak, frameDate, hhmm, subsolar, topKm, type Meta, type Storm } from "./meta";
+import { dayStr, degC, dvorak, frameDate, hhmm, isoMs, loopIndices, subsolar, topKm, type Meta, type Storm } from "./meta";
 import { ll2v, type Globe, type Mode, type Style } from "./hdr/scene";
 
 const CITIES: [string, number, number][] = [
@@ -53,8 +53,8 @@ export function bindControls(globe: Globe, meta: Meta) {
   let st = storms[0], sel = 0;
   const hints = () => [
     `Infrared at 10.4 µm from three geostationary satellites, stitched at ${hhmm(frame)} ${dayStr(frame)}. Colder tops are higher.`,
-    `The real 2 km ${st.satellite} frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to orbit the storm; scroll out to spin the globe.`,
-    "A 3D cloud built from the same satellite frame: each cloud stands as tall as its top temperature implies.",
+    `The real 2 km ${st.satellite} frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to turn around the storm, right-drag (or two fingers) to slide across it, scroll out to spin the globe.`,
+    "A 3D cloud built from the same satellite frame: each cloud stands as tall as its top temperature implies. Drag to turn, right-drag (or two fingers) to slide.",
   ];
   const press = (attr: string, v: string) =>
     document.querySelectorAll<HTMLElement>(`[data-${attr}]`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[attr] === v)));
@@ -106,16 +106,30 @@ export function bindControls(globe: Globe, meta: Meta) {
   const track = $("track");
   track.addEventListener("click", () => { const on = track.getAttribute("aria-pressed") !== "true"; globe.setTrack(on); track.setAttribute("aria-pressed", String(on)); });
 
-  // 3-hour loop at 10-minute steps; paused shows the latest frame at full resolution
-  let playing = false, loopT = st.loopFrames - 1;
+  // the loop: the last 6, 12 or 24 hours (10-minute frames for 6 h, 30-minute frames beyond); paused shows the latest
+  // frame at full resolution. Frames load the first time a range is played.
+  let playing = false, hours = 6, frames: number[] = [], loopT = 0, loading = 0, busy = false;
   const playBtn = $("play"), playIcon = document.getElementById("playicon")!, timeEl = $("time");
-  const setPlaying = (on: boolean) => {
-    playing = on;
+  const setPlaying = async (on: boolean) => {
+    const ticket = ++loading;
+    playing = false;
+    if (on) {
+      frames = loopIndices(st, hours); busy = true;
+      timeEl.innerHTML = `<b>Loading ${hours} h</b> · ${frames.length} frames`;
+      try { await globe.prepareLoop(frames); } catch { if (ticket === loading) { busy = false; timeEl.textContent = "Couldn't load the loop"; } return; }
+      if (ticket !== loading) return;
+      loopT = 0;
+    }
+    busy = false; shown = "";
+    playing = on && frames.length > 1;
     playIcon.setAttribute("d", playing ? "M6 4.5h4v15H6zM14 4.5h4v15h-4z" : "M7 4.5v15l12-7.5z");
-    playBtn.setAttribute("aria-label", playing ? "Pause the loop" : "Play the 3-hour loop");
-    if (!playing) loopT = st.loopFrames - 1;
+    playBtn.setAttribute("aria-label", playing ? "Pause the loop" : `Play the last ${hours} hours`);
   };
   playBtn.addEventListener("click", () => setPlaying(!playing));
+  document.querySelectorAll<HTMLElement>("[data-range]").forEach((b) => b.addEventListener("click", () => {
+    hours = Number(b.dataset.range); press("range", b.dataset.range!);
+    if (playing || loading) setPlaying(true);
+  }));
 
   // place labels on the globe view; storm labels are buttons that select the storm
   const root = $("labels");
@@ -151,7 +165,7 @@ export function bindControls(globe: Globe, meta: Meta) {
     fillCard(meta, st);
     globe.selectStorm(i);
     setPlaying(false);
-    $("play").hidden = st.loopFrames < 2;
+    $("play").hidden = $("rangewrap").hidden = st.loopFrames < 2;
     $("modehint").textContent = hints()[mode];
     $("sunhint").textContent = sunHint();
     $("stylehint").textContent = RAMPS[style].hint();
@@ -160,16 +174,16 @@ export function bindControls(globe: Globe, meta: Meta) {
   const canvas = $("gl"), tmp = new THREE.Vector3(), toCam = new THREE.Vector3();
   let shown = "";
   globe.onFrame((m, dt) => {
-    const n = st.loopFrames;
-    if (playing) loopT = (loopT + dt * 3.0) % n;
-    globe.setLoop(playing ? loopT : null);
-    const idx = Math.min(Math.round(loopT), n - 1);
+    // about 6 frames a second, holding a beat on the latest frame before it starts again
+    const n = frames.length;
+    if (playing) loopT = (loopT + dt * 6) % (n + 2);
+    globe.setLoop(playing ? Math.min(loopT, n - 1) : null);
+    const idx = playing ? frames[Math.min(Math.round(loopT), n - 1)] : -1;
     const key = `${sel}:${idx}:${playing}`;
-    if (key !== shown) {
+    if (key !== shown && !busy) {
       shown = key;
-      const iso = st.loopTimes?.[idx];
-      const t = iso ? new Date(iso.replace("Z", ":00Z")) : new Date(frame.getTime() - (n - 1 - idx) * 600000);
-      timeEl.innerHTML = `<b>${hhmm(t)}</b> · ${dayStr(t)}${playing ? " · loop" : ""}`;
+      const t = playing ? new Date(isoMs(st.loopTimes[idx])) : frame;
+      timeEl.innerHTML = `<b>${hhmm(t)}</b> · ${dayStr(t)}${playing ? ` · last ${hours} h` : ""}`;
     }
     const w = canvas.clientWidth, h = canvas.clientHeight, cam = globe.camera;
     for (const l of labels) {
@@ -217,7 +231,7 @@ export function bindControls(globe: Globe, meta: Meta) {
   fillCard(meta, st);
   press("storm", "0");
   stormLabels[0]?.classList.add("on");
-  $("play").hidden = st.loopFrames < 2;
+  $("play").hidden = $("rangewrap").hidden = st.loopFrames < 2;
   setMode(0);
   setStyle(style);
 }
