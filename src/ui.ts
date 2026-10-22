@@ -45,7 +45,7 @@ function fillCard(meta: Meta, st: Storm) {
   $("cdo").textContent = `≈ ${st.cdoRadiusKm} km radius below −63 °C`;
   const tr = st.track, span = tr.length > 1 ? Math.round((Date.parse(tr[tr.length - 1][0]) - Date.parse(tr[0][0])) / 36e5) : 0;
   $("trackinfo").textContent = `${span} h of fixes from ${st.satellite}, every 3 h`;
-  $("source").textContent = st.agency ? `${st.agency} advisory · ${stormSub(st)}` : "No warning centre advisory matched; found in the IR";
+  $("source").textContent = st.agency ? `${st.agency} advisory ${hhmm(new Date(isoMs(st.advisory!)))} · ${st.agencyId ?? st.id}` : "No warning centre advisory matched; found in the IR";
   $("peek").textContent = st.windKt != null ? `${st.windKt} kt (${st.agency}) · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`
     : `${dv ? `≈ ${dv.kt} kt (unofficial)` : "no clear eye"} · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`;
   html("vmax", st.windKt != null ? `${st.windKt} kt · ${st.agency}${st.pressureMb ? ` · ${st.pressureMb} hPa` : ""}<br><small>official advisory${dv ? `; IR estimate ≈ ${dv.kt} kt, unofficial` : ""}</small>`
@@ -90,7 +90,7 @@ export function bindControls(globe: Globe, meta: Meta) {
     const r = RAMPS[s];
     $("ramp").style.background = r.ramp;
     html("ticks", r.ticks.map((t) => `<span>${t}</span>`).join(""));
-    $("legend-title").textContent = s === 0 ? "Visible imagery" : s === 1 ? "Cloud-top temperature" : "Infrared over blue sea";
+    $("legend-title").textContent = s === 0 ? "True colour" : s === 1 ? "Cloud-top temperature" : "Infrared over blue sea";
     $("stylehint").textContent = r.hint();
   };
   document.querySelectorAll<HTMLElement>("[data-style]").forEach((b) => b.addEventListener("click", () => setStyle(Number(b.dataset.style) as Style)));
