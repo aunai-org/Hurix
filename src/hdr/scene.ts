@@ -11,6 +11,10 @@ import { dvorak, frameDate, isoMs, subsolar, type Meta, type Storm } from "../me
 import { category } from "../intensity";
 
 export type Mode = 0 | 1 | 2;
+/** How far a loop slot has dissolved into the next frame: held sharp for 75 % of the slot, then a quick fade, so the
+ * replay never sits on two pictures laid over each other. */
+export const hold = (f: number) => THREE.MathUtils.smoothstep(f, 0.75, 1);
+
 /** 0 = Visible, 1 = Infra, 2 = Blue. */
 export type Style = 0 | 1 | 2;
 const PATCH_KM = 2048, R_KM = 6371, D2R = Math.PI / 180;
@@ -455,7 +459,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
         return;
       }
       const i = Math.floor(t) % n, j = (i + 1) % n, f = t - Math.floor(t);
-      uni.frameA.value = loopIR[i]; uni.frameB.value = loopIR[j]; uni.frameMix.value = j === 0 ? 0 : f;
+      uni.frameA.value = loopIR[i]; uni.frameB.value = loopIR[j]; uni.frameMix.value = j === 0 ? 0 : hold(f);
       const now = loopMs[i] + (j === 0 ? 0 : (loopMs[j] - loopMs[i]) * f);
       // frames further apart than the infrared ones (true colour every 30 minutes, the globe every hour): blend the pair either side
       const pair = (times: number[]) => {
@@ -464,11 +468,11 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       };
       if (loopVis.length > 1) {
         const [k, m] = pair(loopVisMs);
-        uni.vis.value = loopVis[k]; uni.visB.value = loopVis[k + 1]; uni.visMix.value = m;
+        uni.vis.value = loopVis[k]; uni.visB.value = loopVis[k + 1]; uni.visMix.value = hold(m);
       }
       if (loopGlobe.length > 1) {
         const [k, m] = pair(loopGlobeMs);
-        uni.ir.value = loopGlobe[k]; uni.irB.value = loopGlobe[k + 1]; uni.irMix.value = m;
+        uni.ir.value = loopGlobe[k]; uni.irB.value = loopGlobe[k + 1]; uni.irMix.value = hold(m);
       }
     },
     onFrame(fn) { listeners.push(fn); },
