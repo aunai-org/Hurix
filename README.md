@@ -75,6 +75,8 @@ sh pipeline/run.sh 2026-10-20T05:40   # or a given 10-minute slot (UTC)
 
 The downloads are large (a GOES full-disk visible file is about 200 MB), so the first run takes a while. Downloaded files are cached in `pipeline/frames`.
 
+Every hour, and on every push to main, a GitHub Actions workflow (`.github/workflows/refresh.yml`) runs `scripts/refresh-live.sh`, which does the same into a fresh folder and builds the site with it, then uploads that site to the Cloudflare Pages project `hurrix` with Wrangler. It needs two repository secrets: `CLOUDFLARE_API_TOKEN` (a token with *Account → Cloudflare Pages → Edit*) and `CLOUDFLARE_ACCOUNT_ID`. Add a custom domain under **Workers & Pages → hurrix → Custom domains**. Run it by hand from the Actions tab with **Run workflow**.
+
 ## Project layout
 
 ```
