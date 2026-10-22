@@ -95,3 +95,4 @@ body { margin: 0; background: var(--space); color: var(--ink); font: 13px/1.45 v
   .seg button { padding: 0 10px; }
 }
 @media (prefers-reduced-motion: reduce) { #loading { transition: none; } }
+.swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }

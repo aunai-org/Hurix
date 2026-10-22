@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { dayStr, degC, dvorak, frameDate, hhmm, isoMs, loopIndices, subsolar, topKm, type Meta, type Storm } from "./meta";
 import { ll2v, type Globe, type Mode, type Style } from "./hdr/scene";
 import { stormSub, stormTitle } from "./names";
+import { CATEGORIES } from "./intensity";
 
 const CITIES: [string, number, number][] = [
   ["Manila", 14.6, 121.0], ["Guam", 13.44, 144.79], ["Tokyo", 35.68, 139.69], ["Taipei", 25.03, 121.56],
@@ -109,7 +110,15 @@ export function bindControls(globe: Globe, meta: Meta) {
   const exag = $<HTMLInputElement>("exag");
   exag.addEventListener("input", () => { globe.setHeight(Number(exag.value)); $("exagv").textContent = exag.value; });
   const track = $("track");
-  track.addEventListener("click", () => { const on = track.getAttribute("aria-pressed") !== "true"; globe.setTrack(on); track.setAttribute("aria-pressed", String(on)); });
+  track.addEventListener("click", () => {
+    const on = track.getAttribute("aria-pressed") !== "true";
+    globe.setTrack(on); track.setAttribute("aria-pressed", String(on)); $("pathlegend").hidden = !on;
+  });
+  for (const c of CATEGORIES) {
+    const row = $("swatches").appendChild(Object.assign(document.createElement("div"), { className: "row" }));
+    row.append(Object.assign(document.createElement("span"), { className: "dot" }), c.label);
+    (row.firstChild as HTMLElement).style.background = c.color;
+  }
 
   // the loop: the last 6, 12 or 24 hours (10-minute frames for 6 h, 30-minute frames beyond); paused shows the latest
   // frame at full resolution. Frames load the first time a range is played.

@@ -34,6 +34,8 @@ export interface Storm {
   pressureMb?: number | null;
   /** Advisory time, "YYYY-MM-DDTHH:MMZ". */
   advisory?: string;
+  /** The warning centre's past track: [time, lat, lon, wind kt or null], every 6 h, oldest first, ending at the advisory. */
+  history?: [string, number, number, number | null][];
 }
 
 /** A storm with a current warning that no satellite in this feed sees well (e.g. the Indian Ocean): listed, not imaged. */
@@ -45,6 +47,7 @@ export interface OtherStorm {
   windKt: number | null;
   lat: number;
   lon: number;
+  history?: [string, number, number, number | null][];
 }
 
 export interface Meta {
