@@ -2,9 +2,9 @@
 
 **Tropical cyclones on a 3D globe, from real satellite imagery.**
 
-![Imagery view: the satellite's true-colour picture of a typhoon east of the Philippines, draped on the globe](docs/media/imagery.png)
+![Satellite view: the satellite's true-colour picture of a typhoon east of the Philippines, draped on the globe](docs/media/imagery.png)
 
-Hurrix takes the pictures that weather satellites send down every ten minutes and puts them on a globe you can spin. It finds the hurricanes and typhoons in those pictures by itself, follows each one back over the last two days, and lets you fly in and see the storm in 3D.
+Hurrix takes the pictures that weather satellites send down every ten minutes and puts them on a globe you can spin. It takes the list of storms the official warning centres are tracking right now (the US National Hurricane Center and the Joint Typhoon Warning Center), names each one on the globe, and lets you fly in and see any of them in 3D.
 
 Nothing on the globe is drawn by hand. Every cloud you see is a pixel the satellite measured. The only modelled parts are the heights in the 3D views, which come from the cloud temperatures (see [how the 3D views work](docs/spec.md#8-the-3d-views)).
 
@@ -12,28 +12,31 @@ For the full story (every data source, the pipeline step by step, how the 3D vie
 
 ## What you see
 
-There are three views, picked from the bar at the bottom of the screen.
+Every active storm is listed by its official name in the Storm panel and labelled over its position on the globe. Pick one from the list or click its label to fly to it.
+
+There are three views, picked under **View** in the bar at the bottom of the screen.
 
 | View | What it shows |
 | --- | --- |
-| **Imagery** | The whole Earth as the satellites see it right now. Around the selected storm, a sharper close-up is laid on top: a true-colour photo (1 km per pixel) if it was daytime there, otherwise an infrared picture (2 km per pixel). |
-| **3D cloud tops** | The storm's close-up with every pixel lifted to the height of its cloud top, so the tall thunderstorms around the eye stand up like mountains. |
+| **Satellite** | The whole Earth as the satellites see it right now. Around the selected storm, a sharper close-up is laid on top: a true-colour photo (1 km per pixel) if it was daytime there, otherwise an infrared picture (2 km per pixel). |
+| **Cloud heights** | The storm's close-up with every pixel lifted to the height of its cloud top, so the tall thunderstorms around the eye stand up like mountains. |
 | **3D storm** | The same storm as a soft, see-through 3D cloud you can fly around, lit by the sun. |
 
-![3D cloud tops: each pixel lifted to its cloud-top height](docs/media/cloud-tops.png)
+![Cloud heights: each pixel lifted to its cloud-top height](docs/media/cloud-tops.png)
 ![3D storm: the cloud built up in 3D from the satellite frame](docs/media/storm.png)
 
-There are also three ways to colour the clouds:
+There are also three ways to colour the clouds, under **Colours**:
 
-- **Visible** shows real colour, the way your eyes would see it from space. It only works in daylight, so the night side falls back to infrared in grey.
-- **Infra** colours the clouds by temperature, like the weather maps on TV. Warm, low clouds are grey. Below −30 °C they run from blue through green, yellow and red to deep red at −75 °C. The colder the top, the higher and stronger the storm.
-- **Blue** shows infrared clouds over a deep blue sea, which makes the storm's shape easy to read.
+- **True colour** shows real colour, the way your eyes would see it from space. It only works in daylight, so the night side falls back to infrared in grey.
+- **Temperature** colours the clouds by temperature, like the weather maps on TV. Warm, low clouds are grey. Below −30 °C they run from blue through green, yellow and red to deep red at −75 °C. The colder the top, the higher and stronger the storm.
+- **Soft blue** shows infrared clouds over a deep blue sea, which makes the storm's shape easy to read.
 
 A few more controls:
 
-- **Lighting:** *Studio* uses a fixed light that shows the 3D shapes clearly. *Real sun* puts the sun where it really was at the frame time, so half the globe is in night.
-- **Track:** draws each storm's path over the last 48 hours. It's off at first.
-- **Play** with **6 h / 12 h / 24 h:** replays the real satellite frames for the last 6 hours (every 10 minutes), 12 hours or 24 hours (every 30 minutes). The clouds move across the whole globe too, from hourly world frames. The frames load the first time you play a length.
+- **Light:** *Even* uses a fixed light that shows the 3D shapes clearly. *Real sun* puts the sun where it really was at the frame time, so half the globe is in night.
+- **Paths:** draws each storm's official past track. Each checkpoint is coloured by the official wind at that time, on the Saffir–Simpson scale (blue for a depression up to red for category 5), with a key in the Legend. It's off at first.
+- **Replay**, ▶ with **6 h / 12 h / 24 h:** replays the real satellite frames for the last 6 hours (every 10 minutes), 12 hours or 24 hours (every 30 minutes). The clouds move across the whole globe too, from hourly world frames. Each frame is held sharp, then dissolves quickly into the next. The frames load the first time you play a length.
+- **Height ×** (in the two 3D views) stretches the cloud heights.
 - **Storm and Legend:** two tabs on the right edge. Each opens a panel (the storm's details, or what the colours mean) that slides back out of the way by itself.
 
 On a phone the same page fits a portrait screen, with the panels as drawers on the right edge:
@@ -47,11 +50,12 @@ NOAA satellite files ──► pipeline/ (Python) ──► public/data/ (images
 ```
 
 - **Data:** infrared and visible pictures from three weather satellites, GOES-19, GOES-18 and Himawari-9, downloaded from [NOAA's open data on AWS](https://registry.opendata.aws/noaa-goes/). No account or key needed. The Earth underneath is NASA's Blue Marble.
-- **Pipeline:** Python scripts stitch the satellites into one world map, find the storms by their cold cloud cores, follow each one back 48 hours, and cut a sharp close-up and a 24-hour loop for each, plus an hourly loop of the whole globe.
+- **Storms:** the active storms, their names, official winds and past tracks come from the NHC's [`CurrentStorms.json`](https://www.nhc.noaa.gov/CurrentStorms.json) and best-track files and from the JTWC's [warning feed](https://www.metoc.navy.mil/jtwc/rss/jtwc.rss). A storm both centres warn on is shown once, with the NHC data.
+- **Pipeline:** Python scripts stitch the satellites into one world map, take the official storms the satellites can see (or, if the feeds are down, find storms by their cold cloud cores), and cut a sharp close-up and a 24-hour loop for each, plus an hourly loop of the whole globe.
 - **Page:** a static TypeScript site that draws everything with [three.js](https://threejs.org) and WebGL shaders, built with [Vite](https://vite.dev).
 - **3D:** cloud heights come from cloud-top temperatures (the air cools about 6.3 °C per km), so the 3D shapes are modelled from real measurements.
 
-Hurrix isn't an official forecast. The intensity is a rough, unofficial estimate, storm names and advisories aren't wired in yet, and Europe, Africa and the Indian Ocean show archive clouds because Meteosat isn't on NOAA's buckets. [Section 11 of the spec](docs/spec.md#11-limits) has the details.
+Hurrix isn't an official forecast. Names and winds come from the latest official advisory; it doesn't show forecasts. Europe, Africa and the Indian Ocean show archive clouds because Meteosat isn't on NOAA's buckets, so storms there are listed and labelled but have no close-up. [Section 11 of the spec](docs/spec.md#11-limits) has the details.
 
 ## Run it
 
