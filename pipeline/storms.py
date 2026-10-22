@@ -306,6 +306,26 @@ def seed_fixes(off, fixes, frame):
                       "eyeK": 0.0, "ringK": 0.0, "eyeClear": False}]
 
 
+def official_now(off, frame):
+    """The advisory position carried on to the frame time along the last 6 h of the official track (at most 12 h on)."""
+    h = off.get("history") or []
+    if len(h) < 2:
+        return off["lat"], off["lon"]
+    (t1, la1, lo1, _), (t2, la2, lo2, _) = h[-2], h[-1]
+    p = lambda t: datetime.strptime(t, "%Y-%m-%dT%H:%MZ")
+    k = min((frame - p(t2)).total_seconds(), 12 * 3600) / max((p(t2) - p(t1)).total_seconds(), 1)
+    return round(la2 + (la2 - la1) * k, 2), round(lo2 + (lo2 - lo1) * k, 2)
+
+
+def trusted(now, fixes):
+    """The IR track only when its newest fix is a clear eye within 60 km of the official position; the centre of the
+    coldest cloud is often well off a storm's real centre, and then the advisory position is the better one."""
+    if not fixes or not fixes[-1]["eyeClear"]:
+        return []
+    la, lo = now; f = fixes[-1]
+    return fixes if np.hypot(f["lat"] - la, (f["lon"] - lo) * np.cos(np.radians(la))) * 111.2 <= 60 else []
+
+
 def choose(officials, sees):
     """Split official storms into those to image (a satellite here sees them; at most MAX_STORMS) and the rest."""
     seen = [o for o in officials if sees(o["lat"], o["lon"])]
@@ -329,8 +349,8 @@ def main():
         print(f"official {o['id']} {o['name']} {o['lat']} {o['lon']}")
     storms = [{"sat": sat_for(o["lat"], o["lon"]), "fixes": None, "off": o} for o in imaged]
     for s in storms:
-        o = s["off"]
-        s["fixes"] = seed_fixes(o, track(s["sat"], frame, o["lat"], o["lon"]), frame)
+        la, lo = official_now(s["off"], frame)
+        s["fixes"] = seed_fixes({"lat": la, "lon": lo}, trusted((la, lo), track(s["sat"], frame, la, lo)), frame)
     for la, lo, core in ([] if storms else candidates(os.path.join(HERE, "stitched_4096.npz"))):
         sat = best_sat(la, lo)
         print(f"candidate {la:.1f} {lo:.1f} core {core:.2f} via {sat}")

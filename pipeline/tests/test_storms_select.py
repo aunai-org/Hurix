@@ -42,3 +42,22 @@ def test_choose_caps_at_max():
 
 def test_choose_storms_falls_back_to_ir():
     assert S.choose([], sees) == ([], [])
+
+
+def test_official_now_extrapolates_along_track():
+    o = off("WP29", 21.9, 124.3, 95)
+    o["advisory"] = "2026-10-22T18:00Z"
+    o["history"] = [("2026-10-22T12:00Z", 21.2, 124.9, 100), ("2026-10-22T18:00Z", 21.9, 124.3, 95)]
+    la, lo = S.official_now(o, datetime(2026, 10, 22, 21, 0))
+    assert abs(la - 22.25) < 0.01 and abs(lo - 124.0) < 0.01
+    o["history"] = o["history"][-1:]
+    assert S.official_now(o, datetime(2026, 10, 22, 21, 0)) == (21.9, 124.3)
+
+
+def test_trusted_fixes_drop_a_far_or_eyeless_ir_fix():
+    now = (22.25, 124.0)
+    eye = {"t": "2026-10-22T21:40Z", "lat": 22.3, "lon": 124.05, "eyeK": 280.0, "ringK": 200.0, "eyeClear": True}
+    mass = dict(eye, lat=20.63, lon=124.16, eyeClear=False)
+    assert S.trusted(now, [mass, eye]) == [mass, eye]
+    assert S.trusted(now, [eye, mass]) == []
+    assert S.trusted(now, [dict(eye, lat=21.0)]) == []
