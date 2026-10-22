@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** List every active tropical system on Earth (tropical depressions and storms, hurricanes, typhoons, cyclones) by its official name, show the name in the storm list and over the storm on the globe, and let any listed storm be selected.
+**Goal:** List every active tropical system on Earth (tropical depressions and storms, hurricanes, typhoons, cyclones) by its official name, show the name in the storm list and over the storm on the globe, and let any listed storm be selected. Also: each storm's past path colour-coded by intensity (off by default), plain control names in a tidy layout, and a sharp loop in Imagery mode.
 
 **Architecture:** The hourly pipeline stops deciding by itself what counts as a storm. It reads the official active-storm lists from the warning centres instead: NHC for the Atlantic and the East and Central Pacific, and JTWC for the West Pacific, the Indian Ocean and the Southern Hemisphere. Each official storm becomes a candidate at its advisory position. Storms a GOES or Himawari satellite sees well get the real satellite close-up, loop and 3D views as now. Storms no satellite here sees (Indian Ocean, East Atlantic) are still listed and labelled on the globe, without imagery. If both feeds fail, the pipeline falls back to today's infrared detection and labels those storms "Unnamed system".
 
 **Tech Stack:** Python 3.13 standard library only for the feeds (`urllib.request`, `json`, `re`). numpy/scipy pipeline as now. TypeScript, Vite and three.js page. pytest (pipeline) and vitest (page) as dev-only test tools.
 
-**Spec:** omr's request in the project thread (2026-10-22): "list all storm [Tropical, Typhoons, Hurricanes, Cyclones] available, select any of them to see. Name of the storm should be mentioned in list and over the storm location." Current behaviour is in `docs/spec.md` and `README.md`.
+**Spec:** omr's request in the project thread (2026-10-22): "list all storm [Tropical, Typhoons, Hurricanes, Cyclones] available, select any of them to see. Name of the storm should be mentioned in list and over the storm location." Added 22:17 UTC: "1 storm path track should show for each storm and off by default - color code checkpoints by intensity data. 2 controls labels should be Easy and Readable - 3D Storm, 3D Clouds Over? what does that mean anyway? 3. Controls should be aligned and well placed. 4. storm animation in imagery mode is so blurry... fix it" Current behaviour is in `docs/spec.md` and `README.md`.
 
 ## Global Constraints
 
@@ -18,6 +18,8 @@
 - The page must still work when the feeds are down. A feed failure must never fail the hourly run.
 - No new runtime dependencies on the page and no new pipeline packages. `pytest` and `vitest` are dev-only.
 - The official wind is labelled with its agency ("95 kt · JTWC"). The existing Dvorak-style figure stays labelled "unofficial".
+- Path colours follow the Saffir–Simpson scale by official wind (kt): < 34 `#5ebaff` depression, 34–63 `#00faf4` storm, 64–82 `#ffffcc` cat 1, 83–95 `#ffe775` cat 2, 96–112 `#ffc140` cat 3, 113–136 `#ff8f20` cat 4, ≥ 137 `#ff6060` cat 5, and grey `#9aa3ad` when there is no official wind. The legend shows the same scale.
+- The paths toggle stays off by default.
 - Commits and PRs carry no Claude session links, session ids or "Requested by" lines.
 
 ## Review Focus
@@ -27,6 +29,7 @@
 3. **Southern-hemisphere and west-longitude positions** (`067S 0497E`, `098N 1013W`). They parse with the right signs. Covered by `test_parse_tcw_*` (Task 1).
 4. **An official storm with no deep convection left** (post-tropical Josephine), where `track()` returns no fixes. It is still imaged from its advisory position and does not crash the run. Covered by `test_seed_fixes_without_ir_track` (Task 2).
 5. **Zero official storms with a satellite view.** The page still loads, using the IR fallback, and the list still shows the storms without imagery. Covered by `test_choose_storms_falls_back_to_ir` (Task 2).
+6. **History lines repeat once per wind-radius row** (in both `.tcw` and b-deck files). Each time appears once in `history`. Covered by `test_parse_tcw_history_dedupes` and `test_parse_bdeck` (Task 4).
 
 ---
 
@@ -45,6 +48,11 @@
 | `src/ui.ts` (modify) | Named picker list, named globe labels, card title and official wind |
 | `src/hdr/scene.ts` (modify) | `Globe.lookAt(lat, lon)` for storms without imagery |
 | `index.html`, `src/style.css` (modify) | Picker as a vertical list |
+| `pipeline/advisories.py` (Task 4) | Official past track with wind: the JTWC `.tcw` history block, and the NHC b-deck `https://ftp.nhc.noaa.gov/atcf/btk/b{al}{NN}{YYYY}.dat` |
+| `src/hdr/scene.ts` track section (about lines 190–220) | Paths for every storm, dots coloured by wind |
+| `src/intensity.ts` + test (new) | Wind → category and colour |
+| `pipeline/visible.py:176-177`, `src/hdr/scene.ts` `setLoop` | Sharp loop |
+| `index.html` toolbar, `src/style.css`, `src/ui.ts` hints | Control names and layout |
 | `README.md`, `docs/spec.md` (modify) | Where names come from; the fallback |
 
 ---
@@ -191,7 +199,85 @@ Expected: the build is clean. The list shows every storm by name. The labels sit
 
 ---
 
-### Task 4: Ship
+### Task 4: Official past track with intensity
+
+**Files:** modify `pipeline/advisories.py`, `pipeline/tests/test_advisories.py`, `pipeline/storms.py`; fixture `pipeline/tests/fixtures/bal102026.dat` (already committed, fetched 2026-10-22).
+
+**Interfaces:**
+- `Official` gains `history: list[tuple[str, float, float, int | None]]` = `(time "YYYY-MM-DDTHH:MMZ", lat, lon, windKt)`, oldest first, one entry per time.
+- `parse_tcw` fills it from the block of lines matching `^\d{10} +\d{2,3}[NS] *\d{3,4}[EW] +\d+` (storm number, YYMMDDHH, position, wind; each time is repeated once per radius row). `parse_bdeck(text: str) -> list[tuple[...]]` reads the `BEST` rows (comma-separated: basin, number, YYYYMMDDHH, …, lat `250N`, lon `700W`, vmax kt). `active_storms` fetches the b-deck for each NHC storm, and a failed b-deck fetch leaves `history = [(advisory, lat, lon, windKt)]`.
+- `meta.json`: each storm and each `others` entry gains `history` (same tuples as JSON arrays). The existing IR `track` stays for fallback storms.
+
+- [ ] **Step 1: Failing tests.**
+  - `test_parse_tcw_history_dedupes`: Champi's history starts `("2026-10-11T06:00Z", 9.5, 163.8, 15)`, ends `("2026-10-22T18:00Z", 21.9, 124.3, 95)`, and has no repeated times.
+  - `test_parse_bdeck`: Josephine's history has no repeated times, its last entry's wind is 55, and every `lon < 0`.
+  - `test_active_storms_history_survives_bdeck_failure`: the fake `get` fails only for `/btk/` → Josephine `history` has length 1.
+- [ ] **Step 2:** `python3 -m pytest pipeline/tests -q` → the new tests fail.
+- [ ] **Step 3:** Implement. In `storms.py`, copy `off["history"]` into each storm's and each other's meta.
+- [ ] **Step 4:** `python3 -m pytest pipeline/tests -q` → all pass.
+- [ ] **Step 5: Commit**: "Official past track with wind for every storm"
+
+### Task 5: Paths for every storm, coloured by intensity
+
+**Files:** create `src/intensity.ts`, `src/intensity.test.ts`; modify `src/meta.ts` (`history?: [string, number, number, number | null][]` on `Storm` and `OtherStorm`), `src/hdr/scene.ts` (track section, about lines 190–220), `index.html` + `src/ui.ts` (legend rows), `src/style.css`.
+
+**Interfaces:**
+- `category(kt: number | null): { key: "na" | "td" | "ts" | "c1" | "c2" | "c3" | "c4" | "c5"; label: string; color: string }`, using the thresholds and colours in Global Constraints. Labels: "No official wind", "Tropical depression", "Tropical storm", "Category 1" … "Category 5".
+
+- [ ] **Step 1: Failing test** `src/intensity.test.ts`: `category(33).key === "td"`, `category(34).key === "ts"`, `category(64).key === "c1"`, `category(95).color === "#ffe775"`, `category(137).key === "c5"`, `category(null).color === "#9aa3ad"`.
+- [ ] **Step 2:** `npm test` → fails (no module).
+- [ ] **Step 3:** Implement `category`. In `scene.ts`, build the path for **every** storm and every `others` entry from `history` when present, else from the IR `track`. The line is a thin neutral tube (`#c8ccd2` at 0.5 opacity). Each checkpoint is a dot in `category(wind).color`, and the newest is 1.6× larger. All of it lives in `trackGroup`, whose visibility stays tied to the paths toggle (default off). Keep the pulse on imaged storms.
+- [ ] **Step 4:** Add a legend block "Storm path · official wind" with the 8 swatches, shown only while paths are on.
+- [ ] **Step 5:** `npm test && npm run build` → pass. Screenshot with paths on: each storm has a path, dots change colour along Champi's path (blue → cyan → yellow → orange as it strengthened).
+- [ ] **Step 6: Commit**: "Storm paths for every storm, coloured by official intensity"
+
+### Task 6: Sharp loop in Imagery mode
+
+**Cause found while planning:** the default Imagery style plays true-colour loop frames cut at **1024 px** (`pipeline/visible.py:176`), half the resolution of the 2048 px still. They are 30 minutes apart, and `setLoop` cross-fades them continuously (`visMix`, and `frameMix` for infrared), so every in-between moment shows two images on top of each other.
+
+**Files:** modify `pipeline/visible.py:176-177`, `src/hdr/scene.ts` (`setLoop`), and add `scripts/sharpness.py`.
+
+**Interfaces:** `hold(f: number): number` in `src/hdr/scene.ts` is `smoothstep(0.75, 1, f)`. It's used for `frameMix`, `visMix` and `irMix`, so each frame is held sharp for 75 % of its slot, then dissolves quickly.
+
+- [ ] **Step 1: Measure first.** `scripts/sharpness.py A.png B.png` prints the variance of the Laplacian over the centre 400×400 px of each image, and their ratio. Take Playwright screenshots at 1440×900 in Imagery mode of the still and of the loop paused halfway between two frames (`setLoop(k + 0.5)`).
+Expected now: a ratio well below 0.85.
+- [ ] **Step 2:** `visible.py` saves loop frames at the full `NV` (2048 px), `quality=90`, with no resize.
+- [ ] **Step 3:** Apply `hold` in `setLoop`.
+- [ ] **Step 4:** Re-measure. Expected: loop/still ratio ≥ 0.85 at a mid-frame, and the playback looks steady in a 6 h screen recording. The deploy grows by about 0.5 MB per true-colour frame. Check that the largest file is still well under 25 MiB.
+- [ ] **Step 5: Commit**: "Play the loop sharp: full-resolution true-colour frames, hold then dissolve"
+
+### Task 7: Plain control names and a tidy toolbar
+
+Use `design:ux-copy` for the final wording and `design:design-critique` on before and after screenshots at 1440×900 and 390×844. The proposal below is the starting point:
+
+| Today | New | Shown as |
+|---|---|---|
+| Imagery · 3D cloud tops · 3D storm | **Satellite · Cloud heights · 3D storm** | group caption "View" |
+| Visible · Infra · Blue | **True colour · Temperature · Soft blue** | caption "Colours" |
+| Studio · Real sun | **Even light · Real sun** | caption "Light" |
+| Track | **Paths** (toggle) | caption "Layers" |
+| ▶ 6 h 12 h 24 h | unchanged | caption "Replay" |
+| Height × | **Height ×** shown only in Cloud heights and 3D storm | — |
+
+The hint for each view says in one sentence what it shows. Cloud heights: "the satellite picture raised by how high each cloud top is". 3D storm: "the storm's clouds built as a 3D volume you can turn around".
+
+**Layout:**
+- Every group has a 10 px uppercase caption above it, left-aligned.
+- All buttons are 36 px tall, with the same padding and a 12 px gap between groups.
+- Desktop: one row, with the time readout right-aligned.
+- Phone (≤ 600 px): a 2-column grid. View takes the full width. Colours and Light share a row. Then Layers and Replay, with time on its own line. Nothing wraps mid-group.
+- The storm list (Task 3) sits in the Storm drawer, not the toolbar.
+
+**Files:** `index.html` (toolbar markup), `src/style.css` (`.bar`, `.seg`, captions, the phone media query), `src/ui.ts` (`hints()` wording, height slider visibility).
+
+- [ ] **Step 1:** Before screenshots, run `design:design-critique` on them, and fold its layout findings into the spec above.
+- [ ] **Step 2:** Implement the markup, CSS and copy.
+- [ ] **Step 3:** `npm run build`. After screenshots at both sizes. Check all groups line up, nothing is clipped at 360 px wide, keyboard focus order runs left to right, and the `aria-label`s match the new names.
+- [ ] **Step 4: Commit**: "Plain control names and an aligned toolbar"
+
+---
+
+### Task 8: Ship
 
 **Files:** modify `README.md` (data section) and `docs/spec.md` (storm detection section).
 
