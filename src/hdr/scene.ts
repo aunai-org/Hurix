@@ -25,6 +25,8 @@ export interface Globe {
   /** The selected storm's eye, as a unit vector. */
   eye: THREE.Vector3;
   selectStorm(i: number): void;
+  /** Turns the whole globe to a place (a storm listed without imagery). */
+  lookAt(lat: number, lon: number): void;
   setMode(m: Mode): void;
   setStyle(s: Style): void;
   setRealSun(on: boolean): void;
@@ -384,6 +386,10 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       useStorm(i);
       const v = viewFor(mode);
       flyTo(v.pos, v.target);
+    },
+    lookAt(lat, lon) {
+      const v = viewFor(0);
+      flyTo(ll2v(lat + 4, lon + 4, v.pos.length()), new THREE.Vector3());
     },
     setMode(m) {
       mode = m; panOff.set(0, 0, 0); controls.enablePan = false;

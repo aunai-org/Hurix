@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { dayStr, degC, dvorak, frameDate, hhmm, isoMs, loopIndices, subsolar, topKm, type Meta, type Storm } from "./meta";
 import { ll2v, type Globe, type Mode, type Style } from "./hdr/scene";
+import { stormSub, stormTitle } from "./names";
 
 const CITIES: [string, number, number][] = [
   ["Manila", 14.6, 121.0], ["Guam", 13.44, 144.79], ["Tokyo", 35.68, 139.69], ["Taipei", 25.03, 121.56],
@@ -33,8 +34,9 @@ function fillCard(meta: Meta, st: Storm) {
   const frame = frameDate(meta);
   const ns = (v: number, p: string, n: string) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? p : n}`;
   const nm = naming(st), dv = st.eyeDiameterKm ? dvorak(st.eyeK, st.ringK) : null;
-  $("card-eyebrow").textContent = `${nm.basin} · from satellite only`;
-  $("card-title").textContent = nm.title;
+  $("card-eyebrow").textContent = st.agency && st.advisory
+    ? `${nm.basin} · ${st.agency} advisory ${hhmm(new Date(isoMs(st.advisory)))}` : `${nm.basin} · from satellite only`;
+  $("card-title").textContent = st.name ? stormTitle(st) : nm.title;
   html("fix", `${ns(st.eye.lat, "N", "S")} ${ns(st.eye.lon, "E", "W")}<br><small>from IR, ${hhmm(frame)} ${dayStr(frame)}</small>`);
   html("motion", `${compass(st.motion.bearing)} at ≈ ${Math.round(st.motion.kt)} kt<br><small>from ${st.motion.hours} h of fixes</small>`);
   $("eyed").textContent = st.eyeDiameterKm ? `${st.eyeDiameterKm} km wide · ${degC(st.eyeK)}` : "Not clear in this frame";
@@ -42,8 +44,11 @@ function fillCard(meta: Meta, st: Storm) {
   $("cdo").textContent = `≈ ${st.cdoRadiusKm} km radius below −63 °C`;
   const tr = st.track, span = tr.length > 1 ? Math.round((Date.parse(tr[tr.length - 1][0]) - Date.parse(tr[0][0])) / 36e5) : 0;
   $("trackinfo").textContent = `${span} h of fixes from ${st.satellite}, every 3 h`;
-  $("peek").textContent = `${dv ? `≈ ${dv.kt} kt (unofficial)` : "no clear eye"} · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`;
-  html("vmax", dv ? `≈ ${dv.kt} kt (T${dv.t.toFixed(1)})<br><small>rough Dvorak-style IR estimate, not official</small>`
+  $("source").textContent = st.agency ? `${st.agency} advisory · ${stormSub(st)}` : "No warning centre advisory matched; found in the IR";
+  $("peek").textContent = st.windKt != null ? `${st.windKt} kt (${st.agency}) · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`
+    : `${dv ? `≈ ${dv.kt} kt (unofficial)` : "no clear eye"} · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`;
+  html("vmax", st.windKt != null ? `${st.windKt} kt · ${st.agency}${st.pressureMb ? ` · ${st.pressureMb} hPa` : ""}<br><small>official advisory${dv ? `; IR estimate ≈ ${dv.kt} kt, unofficial` : ""}</small>`
+    : dv ? `≈ ${dv.kt} kt (T${dv.t.toFixed(1)})<br><small>rough Dvorak-style IR estimate, not official</small>`
     : "No estimate<br><small>the IR method used here needs a clear eye</small>");
 }
 
@@ -138,7 +143,7 @@ export function bindControls(globe: Globe, meta: Meta) {
     el: root.appendChild(Object.assign(document.createElement("div"), { className: "label", textContent: n })), p: ll2v(la, lo, 1.004), dx: 8, dy: -6,
   }));
   const stormLabels = storms.map((s, i) => {
-    const el = Object.assign(document.createElement("button"), { type: "button", className: "label storm", textContent: storms.length > 1 ? `${i + 1} · ${naming(s).title}` : `EYE · ${hhmm(frame)}` });
+    const el = Object.assign(document.createElement("button"), { type: "button", className: "label storm", textContent: s.name ? stormTitle(s) : storms.length > 1 ? `${i + 1} · ${naming(s).title}` : `EYE · ${hhmm(frame)}` });
     el.addEventListener("click", () => select(i));
     root.appendChild(el);
     const l = { el, p: ll2v(s.eye.lat, s.eye.lon, 1.02), dx: 34, dy: -34 };
@@ -146,17 +151,36 @@ export function bindControls(globe: Globe, meta: Meta) {
     return el;
   });
 
-  // the picker: one button per storm, shown when there is more than one
+  // storms with a warning but no imagery here: a dimmed label that turns the globe to them
+  for (const o of meta.others) {
+    const el = Object.assign(document.createElement("button"), { type: "button", className: "label storm off", textContent: stormTitle(o) });
+    el.title = `${stormSub(o)} · no satellite view here`;
+    el.addEventListener("click", () => globe.lookAt(o.lat, o.lon));
+    root.appendChild(el);
+    labels.push({ el, p: ll2v(o.lat, o.lon, 1.02), dx: 34, dy: -34 });
+  }
+
+  // the storm list: every storm by name, imaged ones first; one without imagery turns the globe to it
   const pick = $("stormpick");
-  pick.hidden = storms.length < 2;
+  const row = (title: string, sub: string) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.append(Object.assign(document.createElement("b"), { textContent: title }), Object.assign(document.createElement("small"), { textContent: sub }));
+    pick.appendChild(b);
+    return b;
+  };
   storms.forEach((s, i) => {
     const dv = s.eyeDiameterKm ? dvorak(s.eyeK, s.ringK) : null;
-    const b = Object.assign(document.createElement("button"), { type: "button", textContent: `${i + 1} · ${dv ? `≈${dv.kt} kt` : "no eye"}` });
+    const b = row(s.name ? stormTitle(s) : `${i + 1} · ${naming(s).title}`, s.agency ? stormSub(s) : `${naming(s).basin} · ${dv ? `≈${dv.kt} kt, unofficial` : "from satellite only"}`);
     b.dataset.storm = String(i);
-    b.title = `${naming(s).title}, ${naming(s).basin}`;
     b.addEventListener("click", () => select(i));
-    pick.appendChild(b);
   });
+  for (const o of meta.others) {
+    const b = row(stormTitle(o), `${stormSub(o)} · no satellite view`);
+    b.className = "off";
+    b.addEventListener("click", () => globe.lookAt(o.lat, o.lon));
+  }
+  pick.hidden = storms.length + meta.others.length < 2;
 
   function select(i: number) {
     sel = i; st = storms[i];

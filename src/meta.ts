@@ -23,6 +23,28 @@ export interface Storm {
   visTimes?: string[];
   /** Folder of its close-up and loop, relative to the site root. */
   dir: string;
+  /** From the warning centre's advisory; absent when the storm was found in the IR alone. */
+  name?: string;
+  /** The centre's word for it at this strength, e.g. "Typhoon", "Tropical storm", "Post-tropical cyclone". */
+  kind?: string;
+  /** The centre's number for it, e.g. "29W" (JTWC) or "AL10" (NHC). */
+  agencyId?: string;
+  agency?: "NHC" | "JTWC";
+  windKt?: number | null;
+  pressureMb?: number | null;
+  /** Advisory time, "YYYY-MM-DDTHH:MMZ". */
+  advisory?: string;
+}
+
+/** A storm with a current warning that no satellite in this feed sees well (e.g. the Indian Ocean): listed, not imaged. */
+export interface OtherStorm {
+  name: string;
+  kind: string;
+  agencyId: string;
+  agency: string;
+  windKt: number | null;
+  lat: number;
+  lon: number;
 }
 
 export interface Meta {
@@ -32,6 +54,8 @@ export interface Meta {
   storms: Storm[];
   /** Times of the whole-globe infrared frames (data/globe/gNN.jpg): once an hour over the last 24 hours, oldest first. */
   globeTimes?: string[];
+  /** Storms with a warning but no imagery here. */
+  others: OtherStorm[];
 }
 
 export async function loadMeta(base: string): Promise<Meta> {
@@ -39,8 +63,8 @@ export async function loadMeta(base: string): Promise<Meta> {
   if (!res.ok) throw new Error(`data/meta.json: HTTP ${res.status}`);
   const raw = await res.json();
   // the first pipeline wrote one storm at the top level, with its files directly in data/
-  if (!raw.storms) return { frame: raw.frame, storms: [{ ...raw, id: "s1", satellite: "Himawari-9", dir: "data/" }] };
-  return { frame: raw.frame, globeTimes: raw.globeTimes, storms: (raw.storms as Omit<Storm, "dir">[]).map((s) => ({ ...s, dir: `data/storms/${s.id}/` })) };
+  if (!raw.storms) return { frame: raw.frame, others: [], storms: [{ ...raw, id: "s1", satellite: "Himawari-9", dir: "data/" }] };
+  return { frame: raw.frame, globeTimes: raw.globeTimes, others: raw.others ?? [], storms: (raw.storms as Omit<Storm, "dir">[]).map((s) => ({ ...s, dir: `data/storms/${s.id}/` })) };
 }
 
 export const frameDate = (meta: Meta) => new Date(meta.frame.replace("Z", ":00Z"));
