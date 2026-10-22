@@ -318,7 +318,7 @@ def sat_for(lat, lon):
     return s if view_cos(lat, lon, SATS[s]) >= 0.3 else None  # too close to the edge of every disc (e.g. the Meteosat gap)
 
 
-OFFICIAL_KEYS = ("name", "kind", "agency", "windKt", "pressureMb", "advisory")
+OFFICIAL_KEYS = ("name", "kind", "agency", "windKt", "pressureMb", "advisory", "history")
 
 
 def main():

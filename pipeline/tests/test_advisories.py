@@ -72,3 +72,32 @@ def test_active_storms_survives_failed_feed():
     storms = A.active_storms(fake_get(fail=("CurrentStorms.json",)))
     assert sorted(s["id"] for s in storms) == ["EP22", "SH02", "WP29"]
     assert next(s for s in storms if s["id"] == "EP22")["agency"] == "JTWC"
+
+
+def test_parse_tcw_history_dedupes():
+    h = A.parse_tcw((FIX / "wp2926.tcw").read_text(), "Typhoon")["history"]
+    assert h[0] == ("2026-10-11T06:00Z", 9.5, 163.8, 15)
+    assert h[-1] == ("2026-10-22T18:00Z", 21.9, 124.3, 95)
+    assert len({t for t, *_ in h}) == len(h)
+
+
+def test_parse_tcw_history_southern_hemisphere():
+    h = A.parse_tcw((FIX / "sh0227.tcw").read_text(), "Tropical cyclone")["history"]
+    assert h[0] == ("2026-10-18T12:00Z", -1.7, 58.7, 15)
+
+
+def test_parse_bdeck():
+    h = A.parse_bdeck((FIX / "bal102026.dat").read_text())
+    assert h[0] == ("2026-10-18T18:00Z", 31.0, -71.4, 40)
+    assert len({t for t, *_ in h}) == len(h)
+    assert h[-1][3] == 55 and all(lon < 0 for _, _, lon, _ in h)
+
+
+def test_active_storms_history_from_bdeck():
+    storms = {s["id"]: s for s in A.active_storms(fake_get())}
+    assert storms["AL10"]["history"][-1][3] == 55 and len(storms["AL10"]["history"]) > 5
+
+
+def test_active_storms_history_survives_bdeck_failure():
+    storms = {s["id"]: s for s in A.active_storms(fake_get(fail=("/btk/",)))}
+    assert storms["AL10"]["history"] == [("2026-10-22T21:00Z", 40.0, -65.8, 55)]
