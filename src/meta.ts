@@ -14,7 +14,8 @@ export interface Storm {
   ringK: number;
   eyeDiameterKm: number | null;
   cdoRadiusKm: number;
-  motion: { kt: number; bearing: number; hours: number };
+  /** official: worked out from the warning centre's track, because the IR couldn't follow the centre. */
+  motion: { kt: number; bearing: number; hours: number; official?: boolean };
   /** [time, lat, lon, eye visible (1) or centre from cloud mass (0)], oldest first. */
   track: [string, number, number, number][];
   /** True when the pipeline cut a 1 km true-colour close-up (storm_vis.jpg) from a daylight frame. */

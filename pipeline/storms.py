@@ -292,11 +292,16 @@ def measure(crop):
             round(eye_d) if eye_d else None, round(cdo_r))
 
 
+def dlon(a, b):
+    """b - a in degrees of longitude, the short way round (across the dateline too)."""
+    return (b - a + 180) % 360 - 180
+
+
 def motion(fixes):
     clear = [t for t in fixes if t["eyeClear"]] or fixes
     a, b = clear[max(len(clear) - 8, 0)], clear[-1]
     hrs = max((datetime.strptime(b["t"], "%Y-%m-%dT%H:%MZ") - datetime.strptime(a["t"], "%Y-%m-%dT%H:%MZ")).total_seconds() / 3600, 1)
-    dy = (b["lat"] - a["lat"]) * 60; dx = (b["lon"] - a["lon"]) * 60 * np.cos(np.radians((a["lat"] + b["lat"]) / 2))
+    dy = (b["lat"] - a["lat"]) * 60; dx = dlon(a["lon"], b["lon"]) * 60 * np.cos(np.radians((a["lat"] + b["lat"]) / 2))
     return {"kt": round(float(np.hypot(dx, dy) / hrs), 1), "bearing": round(float((np.degrees(np.arctan2(dx, dy)) + 360) % 360)), "hours": round(hrs)}
 
 
@@ -314,7 +319,7 @@ def official_now(off, frame):
     (t1, la1, lo1, _), (t2, la2, lo2, _) = h[-2], h[-1]
     p = lambda t: datetime.strptime(t, "%Y-%m-%dT%H:%MZ")
     k = min((frame - p(t2)).total_seconds(), 12 * 3600) / max((p(t2) - p(t1)).total_seconds(), 1)
-    return round(la2 + (la2 - la1) * k, 2), round(lo2 + (lo2 - lo1) * k, 2)
+    return round(la2 + (la2 - la1) * k, 2), round(dlon(0, lo2 + dlon(lo1, lo2) * k), 2)
 
 
 def trusted(now, fixes):
@@ -323,7 +328,15 @@ def trusted(now, fixes):
     if not fixes or not fixes[-1]["eyeClear"]:
         return []
     la, lo = now; f = fixes[-1]
-    return fixes if np.hypot(f["lat"] - la, (f["lon"] - lo) * np.cos(np.radians(la))) * 111.2 <= 60 else []
+    return fixes if np.hypot(f["lat"] - la, dlon(lo, f["lon"]) * np.cos(np.radians(la))) * 111.2 <= 60 else []
+
+
+def storm_motion(fixes, off=None):
+    """Motion from the IR fixes, or from the last 6 h of the official track when the IR gave only the seeded position."""
+    h = (off or {}).get("history") or []
+    if len(fixes) > 1 or len(h) < 2:
+        return motion(fixes)
+    return motion([{"t": t, "lat": la, "lon": lo, "eyeClear": False} for t, la, lo, _ in h[-2:]]) | {"official": True}
 
 
 def choose(officials, sees):
@@ -350,7 +363,11 @@ def main():
     storms = [{"sat": sat_for(o["lat"], o["lon"]), "fixes": None, "off": o} for o in imaged]
     for s in storms:
         la, lo = official_now(s["off"], frame)
-        s["fixes"] = seed_fixes({"lat": la, "lon": lo}, trusted((la, lo), track(s["sat"], frame, la, lo)), frame)
+        try:
+            fixes = trusted((la, lo), track(s["sat"], frame, la, lo))
+        except Exception as e:  # e.g. the centre left the disc; the advisory position still gets its close-up
+            print(f"  {s['off']['id']}: no IR track ({e})"); fixes = []
+        s["fixes"] = seed_fixes({"lat": la, "lon": lo}, fixes, frame)
     for la, lo, core in ([] if storms else candidates(os.path.join(HERE, "stitched_4096.npz"))):
         sat = best_sat(la, lo)
         print(f"candidate {la:.1f} {lo:.1f} core {core:.2f} via {sat}")
@@ -370,11 +387,16 @@ def main():
 
     shutil.rmtree(os.path.join(out, "storms"), ignore_errors=True)
     meta_storms = []
-    for i, s in enumerate(storms):
-        sid = f"s{i + 1}"
-        folder = os.path.join(out, "storms", sid); os.makedirs(os.path.join(folder, "loop"))
+    for s in storms:
+        sid = f"s{len(meta_storms) + 1}"
         eye = dict(s["fixes"][-1])
-        crop, _ = closeup_near(s["sat"], frame, eye["lat"], eye["lon"])
+        try:
+            crop, _ = closeup_near(s["sat"], frame, eye["lat"], eye["lon"])
+        except Exception as e:  # one storm that can't be cut never stops the run; an official one is still listed
+            print(f"  no close-up at {eye['lat']} {eye['lon']}: {e}")
+            others += [s["off"]] if s.get("off") else []
+            continue
+        folder = os.path.join(out, "storms", sid); os.makedirs(os.path.join(folder, "loop"))
         if eye["eyeClear"]:  # the track works on a 4 km grid; centre the 2 km close-up on the warmest pixel of the eye
             c = N // 2; sub = ndimage.uniform_filter(np.nan_to_num(crop[c - 10:c + 11, c - 10:c + 11], nan=0.0), 3)
             dy, dx = np.unravel_index(np.argmax(sub), sub.shape)
@@ -396,7 +418,7 @@ def main():
         meta_storms.append({
             "id": sid, "satellite": SAT_NAMES[s["sat"]], "eye": {"lat": eye["lat"], "lon": eye["lon"]},
             "eyeK": round(eye_k, 1), "ringK": round(ring_k, 1), "eyeDiameterKm": eye_d, "cdoRadiusKm": cdo_r,
-            "motion": motion(s["fixes"]), "loopFrames": n, "loopTimes": times,
+            "motion": storm_motion(s["fixes"], s.get("off")), "loopFrames": n, "loopTimes": times,
             "track": [[t["t"], t["lat"], t["lon"], int(t["eyeClear"])] for t in s["fixes"]],
         })
         if s.get("off"):

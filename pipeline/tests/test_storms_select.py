@@ -61,3 +61,33 @@ def test_trusted_fixes_drop_a_far_or_eyeless_ir_fix():
     assert S.trusted(now, [mass, eye]) == [mass, eye]
     assert S.trusted(now, [eye, mass]) == []
     assert S.trusted(now, [dict(eye, lat=21.0)]) == []
+
+
+def test_official_now_across_the_dateline():
+    o = off("WP30", 15.5, 179.4)
+    o["history"] = [("2026-10-22T12:00Z", 15.0, -179.5, 60), ("2026-10-22T18:00Z", 15.5, 179.4, 65)]
+    la, lo = S.official_now(o, datetime(2026, 10, 22, 21, 0))
+    assert abs(la - 15.75) < 0.01 and abs(lo - 178.85) < 0.01
+
+
+def test_trusted_across_the_dateline():
+    eye = {"t": "2026-10-22T21:40Z", "lat": 15.75, "lon": -179.9, "eyeK": 280.0, "ringK": 200.0, "eyeClear": True}
+    assert S.trusted((15.75, 179.9), [eye]) == [eye]
+
+
+def test_motion_across_the_dateline():
+    fixes = [{"t": "2026-10-22T12:00Z", "lat": 15.0, "lon": 179.5, "eyeClear": False},
+             {"t": "2026-10-22T18:00Z", "lat": 15.0, "lon": -179.5, "eyeClear": False}]
+    m = S.motion(fixes)
+    assert m["bearing"] == 90 and abs(m["kt"] - 9.7) < 0.1
+
+
+def test_storm_motion_falls_back_to_the_official_track():
+    o = off("AL10", 40.0, -65.8)
+    o["history"] = [("2026-10-22T12:00Z", 38.0, -66.0, 55), ("2026-10-22T18:00Z", 39.5, -65.9, 55)]
+    seeded = S.seed_fixes(o, [], datetime(2026, 10, 22, 20, 40))
+    m = S.storm_motion(seeded, o)
+    assert m["official"] is True and m["hours"] == 6 and m["bearing"] < 10 and m["kt"] > 10
+    track = [{"t": "2026-10-22T14:40Z", "lat": 39.0, "lon": -66.0, "eyeClear": True},
+             {"t": "2026-10-22T20:40Z", "lat": 40.0, "lon": -65.8, "eyeClear": True}]
+    assert "official" not in S.storm_motion(track, o)

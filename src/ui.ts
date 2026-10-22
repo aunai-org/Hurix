@@ -1,7 +1,7 @@
 // The card, the storm picker, the legend, the control bar and the place labels. Everything shown is measured from the
 // frame in meta.json.
 import * as THREE from "three";
-import { dayStr, degC, dvorak, frameDate, hhmm, isoMs, loopIndices, subsolar, topKm, type Meta, type Storm } from "./meta";
+import { dayStr, degC, dvorak, frameDate, hhmm, isoMs, loopIndices, subsolar, topKm, type Meta, type OtherStorm, type Storm } from "./meta";
 import { ll2v, type Globe, type Mode, type Style } from "./hdr/scene";
 import { stormSub, stormTitle } from "./names";
 import { CATEGORIES } from "./intensity";
@@ -38,13 +38,13 @@ function fillCard(meta: Meta, st: Storm) {
   $("card-eyebrow").textContent = st.agency && st.advisory
     ? `${nm.basin} · ${st.agency} advisory ${hhmm(new Date(isoMs(st.advisory)))}` : `${nm.basin} · from satellite only`;
   $("card-title").textContent = st.name ? stormTitle(st) : nm.title;
-  html("fix", `${ns(st.eye.lat, "N", "S")} ${ns(st.eye.lon, "E", "W")}<br><small>from IR, ${hhmm(frame)} ${dayStr(frame)}</small>`);
-  html("motion", `${compass(st.motion.bearing)} at ≈ ${Math.round(st.motion.kt)} kt<br><small>from ${st.motion.hours} h of fixes</small>`);
+  html("fix", `${ns(st.eye.lat, "N", "S")} ${ns(st.eye.lon, "E", "W")}<br><small>${st.track.length < 2 && st.agency ? "advisory position, carried to" : "from IR,"} ${hhmm(frame)} ${dayStr(frame)}</small>`);
+  html("motion", `${compass(st.motion.bearing)} at ≈ ${Math.round(st.motion.kt)} kt<br><small>from ${st.motion.hours} h of ${st.motion.official ? "the official track" : "IR fixes"}</small>`);
   $("eyed").textContent = st.eyeDiameterKm ? `${st.eyeDiameterKm} km wide · ${degC(st.eyeK)}` : "Not clear in this frame";
   $("tops").textContent = `${degC(st.ringK)} · ≈ ${topKm(st.ringK).toFixed(0)} km`;
   $("cdo").textContent = `≈ ${st.cdoRadiusKm} km radius below −63 °C`;
   const tr = st.track, span = tr.length > 1 ? Math.round((Date.parse(tr[tr.length - 1][0]) - Date.parse(tr[0][0])) / 36e5) : 0;
-  $("trackinfo").textContent = `${span} h of fixes from ${st.satellite}, every 3 h`;
+  $("trackinfo").textContent = span ? `${span} h of fixes from ${st.satellite}, every 3 h` : `No eye ${st.satellite} could follow; centred on the advisory`;
   $("source").textContent = st.agency ? `${st.agency} advisory ${hhmm(new Date(isoMs(st.advisory!)))} · ${st.agencyId ?? st.id}` : "No warning centre advisory matched; found in the IR";
   $("peek").textContent = st.windKt != null ? `${st.windKt} kt (${st.agency}) · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`
     : `${dv ? `≈ ${dv.kt} kt (unofficial)` : "no clear eye"} · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`;
@@ -160,11 +160,12 @@ export function bindControls(globe: Globe, meta: Meta) {
     return el;
   });
 
-  // storms with a warning but no imagery here: a dimmed label that turns the globe to them
+  // storms with a warning but no imagery here: a dimmed label that turns the globe to them, back in the Satellite view
+  const lookAt = (o: OtherStorm) => { if (mode !== 0) setMode(0); globe.lookAt(o.lat, o.lon); };
   for (const o of meta.others) {
     const el = Object.assign(document.createElement("button"), { type: "button", className: "label storm off", textContent: stormTitle(o) });
     el.title = `${stormSub(o)} · no satellite view here`;
-    el.addEventListener("click", () => globe.lookAt(o.lat, o.lon));
+    el.addEventListener("click", () => lookAt(o));
     root.appendChild(el);
     labels.push({ el, p: ll2v(o.lat, o.lon, 1.02), dx: 34, dy: -34 });
   }
@@ -187,7 +188,7 @@ export function bindControls(globe: Globe, meta: Meta) {
   for (const o of meta.others) {
     const b = row(stormTitle(o), `${stormSub(o)} · no satellite view`);
     b.className = "off";
-    b.addEventListener("click", () => globe.lookAt(o.lat, o.lon));
+    b.addEventListener("click", () => lookAt(o));
   }
   pick.hidden = storms.length + meta.others.length < 2;
 
