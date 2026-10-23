@@ -93,13 +93,23 @@ export const EARTH = {
 export const CLOUDS = {
   vertex: SPHERE_VERTEX,
   fragment: /* glsl */ `
-    uniform sampler2D ir, irB, live; uniform vec3 sunDir, eye, east, north; uniform float style, patchOn, patchAng, realSun, irMix;
+    uniform sampler2D ir, irB, live, hd; uniform vec3 sunDir, eye, east, north; uniform float style, patchOn, patchAng, realSun, irMix, hdOn;
+    uniform vec4 hdRect;
     varying vec2 vUv; varying vec3 vN; varying vec3 vP;
     ${GLSL_IR}
     ${GLOBE_IR}
+    // the HD window: sharper tiles where they have loaded (alpha 1), the global map everywhere else
+    // (sampled outside any branch, so the GPU still picks the right mip level)
+    float cloudCode(vec2 uv) {
+      float g = irAt(uv);
+      vec2 d = vec2(fract(uv.x - hdRect.x), uv.y - hdRect.y) / hdRect.zw;
+      vec4 h = texture2D(hd, d);
+      float inside = hdOn * step(0.0, d.y) * step(d.x, 1.0) * step(d.y, 1.0);
+      return mix(g, h.r / max(h.a, 1e-3), h.a * inside);
+    }
     void main(){
       vec3 N = normalize(vN), V = normalize(cameraPosition - vP), L = normalize(sunDir);
-      float bt = btOf(irAt(vUv));
+      float bt = btOf(cloudCode(vUv));
       float a = pow(smoothstep(286.0, 232.0, bt), 1.15);
       float isLive = texture2D(live, vUv).r;
       // hide where the 3D patch takes over

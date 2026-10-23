@@ -114,6 +114,12 @@ export function bindControls(globe: Globe, meta: Meta) {
     const on = track.getAttribute("aria-pressed") !== "true";
     globe.setTrack(on); track.setAttribute("aria-pressed", String(on)); $("pathlegend").hidden = !on;
   });
+  const hd = $("hd");
+  hd.hidden = !meta.tiles;  // data from before HD existed has no tiles
+  hd.addEventListener("click", () => {
+    const on = hd.getAttribute("aria-pressed") !== "true";
+    globe.setHD(on); hd.setAttribute("aria-pressed", String(on));
+  });
   for (const c of CATEGORIES) {
     const row = $("swatches").appendChild(Object.assign(document.createElement("div"), { className: "row" }));
     row.append(Object.assign(document.createElement("span"), { className: "dot" }), c.label);

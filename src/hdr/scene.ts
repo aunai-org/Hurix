@@ -8,6 +8,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME, VOLUME_BLEND } from "./glsl";
 import { dvorak, frameDate, isoMs, subsolar, type Meta, type Storm } from "../meta";
+import { tileWindow, windowRect, windowTiles } from "./tiles";
 import { category } from "../intensity";
 
 export type Mode = 0 | 1 | 2;
@@ -37,6 +38,8 @@ export interface Globe {
   setRealSun(on: boolean): void;
   setHeight(exag: number): void;
   setTrack(on: boolean): void;
+  /** Sharper cloud tiles around where the camera looks, while zoomed in and not replaying. */
+  setHD(on: boolean): void;
   /** Loads the loop frames at these indices (and the true-colour frames in their time span) before they play. */
   prepareLoop(frames: number[]): Promise<void>;
   /** Loop position along the prepared frames (fractional), or null for the latest full-quality frame. */
@@ -145,6 +148,53 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   let loopGlobe: THREE.Texture[] = [], loopGlobeMs: number[] = [];
   const rmwOf = (s: Storm) => Math.max(15, (s.eyeDiameterKm ?? 30) * 0.65);
 
+  // ---------- HD: a 6 x 6-tile window of 2.4 km cloud tiles around where the camera looks, drawn into one atlas ----------
+  const HD_N = 6, HD_DIST = 2.0;
+  const tiles = meta.tiles;
+  const hdCanvas = document.createElement("canvas");
+  hdCanvas.width = hdCanvas.height = HD_N * (tiles?.size ?? 1);
+  const hdCtx = hdCanvas.getContext("2d")!;
+  const hdTex = clamp(new THREE.CanvasTexture(hdCanvas)); hdTex.anisotropy = maxAniso;
+  const hdImages = new Map<string, Promise<ImageBitmap>>();  // decoded tiles, so panning back redraws at once
+  let hdWanted = false, hdKey = "", hdTicket = 0, hdDirty = false, hdUploaded = 0;
+  const hdImage = (id: string) => {
+    let p = hdImages.get(id);
+    if (!p) {
+      p = fetch(`${base}data/tiles/${id}.jpg`).then((r) => r.blob()).then((b) => createImageBitmap(b));
+      p.catch(() => hdImages.delete(id));
+      hdImages.set(id, p);
+      if (hdImages.size > 4 * HD_N * HD_N) hdImages.delete(hdImages.keys().next().value!);
+    }
+    return p;
+  };
+  /** Points the window at (lat, lon): when that moves it to other tiles, clears the atlas and loads them, 6 at a time. */
+  function hdWindow(lat: number, lon: number) {
+    const { r0, c0 } = tileWindow(lat, lon, tiles!, HD_N), key = `${r0}_${c0}`;
+    if (key === hdKey) return;
+    hdKey = key; const ticket = ++hdTicket;
+    hdCtx.clearRect(0, 0, hdCanvas.width, hdCanvas.height); hdDirty = true;
+    uni.hdRect.value.fromArray(windowRect(r0, c0, tiles!, HD_N));
+    const queue = windowTiles(r0, c0, tiles!, HD_N);
+    const worker = async () => {
+      for (let t = queue.shift(); t; t = queue.shift()) {
+        const img = await hdImage(t.id).catch(() => null);
+        if (ticket !== hdTicket) return;  // the window moved on while this tile loaded
+        if (img) { hdCtx.drawImage(img, t.j * tiles!.size, t.i * tiles!.size); hdDirty = true; }
+      }
+    };
+    for (let k = 0; k < 6; k++) void worker();
+  }
+  const sub = new THREE.Vector3();
+  function syncHD() {
+    const on = hdWanted && !playing && !!tiles && camera.position.length() < HD_DIST;
+    uni.hdOn.value = on ? 1 : 0;
+    if (!on) return;
+    sub.copy(camera.position).normalize();
+    hdWindow(Math.asin(sub.y) / D2R, ((Math.atan2(sub.z, -sub.x) / D2R + 360) % 360) - 180);
+    // the atlas is 3072 px square: send it to the GPU at most five times a second while tiles arrive
+    if (hdDirty && performance.now() - hdUploaded > 200) { hdTex.needsUpdate = true; hdDirty = false; hdUploaded = performance.now(); }
+  }
+
   // ---------- uniforms shared by every material ----------
   const eye = new THREE.Vector3(), east = new THREE.Vector3(), north = new THREE.Vector3();
   const first = texFor(storms[0]);
@@ -172,6 +222,9 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     realSun: { value: 0 },
     rmw: { value: 30 },
     vmax: { value: 100 },
+    hd: { value: hdTex as THREE.Texture },
+    hdRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+    hdOn: { value: 0 },
   };
 
   // ---------- stars, Earth, clouds, atmosphere ----------
@@ -383,6 +436,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       if (mode > 0) uni.sunDir.value.lerp(eye.clone().addScaledVector(right, -0.7).addScaledVector(upv, 0.4).normalize(), 0.6).normalize();
     } else uni.sunDir.value.copy(SUN_REAL);
     uni.realSun.value = realSun ? 1 : 0;
+    syncHD();
     const s = 1 + 0.35 * Math.sin(uni.time.value * 2.4);
     pulses.forEach((p, i) => p.scale.setScalar(i === cur ? s : 0.8)); pulseMat.opacity = 0.9 - (s - 1) * 1.6;
     for (const fn of listeners) fn(mode, dt);
@@ -432,6 +486,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     },
     setHeight(exag) { uni.exag.value = exag; setBox(); },
     setTrack(on) { showTrack = on; trackGroup.visible = mode === 0 && on; },
+    setHD(on) { hdWanted = on; },
     async prepareLoop(frames) {
       const st = storms[cur], ms = frames.map((i) => isoMs(st.loopTimes[i]));
       const ir = await Promise.all(frames.map((i) => loopFrame(st, i)));
