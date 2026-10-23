@@ -1,17 +1,20 @@
 """Stitch GOES-19, GOES-18 and Himawari-9 band-13 IR into one equirectangular brightness-temperature map,
-plus a cloud-top height map (GOES ACHA where available, IR-derived elsewhere)."""
+plus a cloud-top height map (GOES ACHA where available, IR-derived elsewhere).
+
+load_sats() reads each satellite once; stitch() maps them onto any lon/lat grid (the 4096 world map here, the HD tiles
+in tiles.py). Usage: python3 reproject.py [WIDTH]"""
 import glob, os, sys
 import numpy as np
 import netCDF4 as nc
 
-W, H = int(sys.argv[1]) if len(sys.argv) > 1 else 4096, None
-H = W // 2
-lon = np.linspace(-180, 180, W, endpoint=False) + 180 / W
-lat = np.linspace(90, -90, H, endpoint=False) - 90 / H
-LON, LAT = np.meshgrid(np.radians(lon), np.radians(lat))
+
+def grid(lon_deg, lat_deg):
+    """Pixel-centre longitudes and latitudes (degrees, 1-D) to the radian grids stitch() takes: a row and a column that
+    broadcast to the full map, so terms that depend on latitude or longitude alone are computed once per row or column."""
+    return np.radians(lon_deg)[None, :], np.radians(lat_deg)[:, None]
 
 
-def scan_angles(lon0, hsat, a, b, sweep):
+def scan_angles(LON, LAT, lon0, hsat, a, b, sweep):
     e2 = 1 - b * b / (a * a)
     latc = np.arctan((b * b) / (a * a) * np.tan(LAT))
     rc = b / np.sqrt(1 - e2 * np.cos(latc) ** 2)
@@ -41,56 +44,68 @@ def sample(img, xs, ys, x, y):
     return out
 
 
-def goes(c13, acha):
-    d = nc.Dataset(c13); p = d["goes_imager_projection"]
-    a, b = p.semi_major_axis, p.semi_minor_axis; hs = p.perspective_point_height + a; lon0 = p.longitude_of_projection_origin
-    x, y, vis, cosz = scan_angles(lon0, hs, a, b, p.sweep_angle_axis)
-    bt = sample(np.ma.filled(d["CMI"][:].astype(np.float32), np.nan), d["x"][:], d["y"][:], x, y)
-    e = nc.Dataset(acha)
-    ht = sample(np.ma.filled(e["HT"][:].astype(np.float32), np.nan), e["x"][:], e["y"][:], x, y)
-    bt[~vis] = np.nan; ht[~vis] = np.nan
-    return bt, ht, np.where(vis, cosz, -1)
+def load_goes(c13, acha):
+    d = nc.Dataset(c13); p = d["goes_imager_projection"]; e = nc.Dataset(acha)
+    a, b = p.semi_major_axis, p.semi_minor_axis
+    return {"proj": (p.longitude_of_projection_origin, p.perspective_point_height + a, a, b, p.sweep_angle_axis),
+            "bt": (np.ma.filled(d["CMI"][:].astype(np.float32), np.nan), d["x"][:], d["y"][:]),
+            "ht": (np.ma.filled(e["HT"][:].astype(np.float32), np.nan), e["x"][:], e["y"][:])}
 
 
-def himawari(folder):
+def load_himawari(folder):
     full = np.full((5500, 5500), np.nan, np.float32)
-    xs = np.zeros(5500); ys = np.zeros(5500); proj = None
     for f in sorted(glob.glob(os.path.join(folder, "*.nc"))):
         d = nc.Dataset(f)
         r, c = int(d.tile_row_offset), int(d.tile_column_offset)
         v = np.ma.filled(d["Sectorized_CMI"][:].astype(np.float32), np.nan)
         full[r:r + v.shape[0], c:c + v.shape[1]] = v
-        xs[c:c + v.shape[1]] = d["x"][:] * 1e-6; ys[r:r + v.shape[0]] = d["y"][:] * 1e-6
         known = (c, float(d["x"][0]) * 1e-6, float(d["x"][1] - d["x"][0]) * 1e-6, r, float(d["y"][0]) * 1e-6, float(d["y"][1] - d["y"][0]) * 1e-6)
         proj = d["fixedgrid_projection"]
         a, b, lon0, hp, sweep = proj.semi_major, proj.semi_minor, proj.longitude_of_projection_origin, proj.perspective_point_height, proj.sweep_angle_axis
     c0, x0, dx, r0, y0, dy = known
     xs = x0 + (np.arange(5500) - c0) * dx; ys = y0 + (np.arange(5500) - r0) * dy
-    x, y, vis, cosz = scan_angles(lon0, hp + a, a, b, sweep)
-    bt = sample(full, xs, ys, x, y); bt[~vis] = np.nan
-    return bt, np.where(vis, cosz, -1)
+    return {"proj": (lon0, hp + a, a, b, sweep), "bt": (full, xs, ys), "ht": None}
 
 
-here = os.path.dirname(os.path.abspath(__file__))
-g19 = goes(f"{here}/g19_c13.nc", f"{here}/g19_acha.nc")
-g18c, g18a = f"{here}/g18_c13.nc", f"{here}/g18_acha.nc"
-g18 = goes(g18c, g18a)
-hbt, hcos = himawari(f"{here}/hima/" + open(f"{here}/hima/current").read().strip())
+def load_sats(here):
+    """GOES-19, GOES-18 and Himawari-9 for the frame fetch.sh downloaded last."""
+    return [load_goes(f"{here}/g19_c13.nc", f"{here}/g19_acha.nc"), load_goes(f"{here}/g18_c13.nc", f"{here}/g18_acha.nc"),
+            load_himawari(f"{here}/hima/" + open(f"{here}/hima/current").read().strip())]
 
-# pick the satellite with the best view; feather seams by blending the two best within a small margin
-cands = [(g19[0], g19[1], g19[2]), (g18[0], g18[1], g18[2]), (hbt, np.full_like(hbt, np.nan), hcos)]
-cos = np.stack([np.where(np.isfinite(c[0]), c[2], -1) for c in cands])
-bts = np.stack([c[0] for c in cands]); hts = np.stack([c[1] for c in cands])
-order = np.argsort(-cos, axis=0)
-best, second = order[0], order[1]
-take = lambda arr, idx: np.take_along_axis(arr, idx[None], 0)[0]
-c1, c2 = take(cos, best), take(cos, second)
-w = np.clip((c1 - c2) / 0.08, 0, 1) * 0.5 + 0.5
-b1, b2 = take(bts, best), take(bts, second)
-bt = np.where(np.isfinite(b2) & (c2 > 0.05), w * b1 + (1 - w) * b2, b1)
-bt = np.where(c1 > 0.05, bt, np.nan)
-ht = take(hts, best)
-coverage = np.clip((c1 - 0.05) / 0.15, 0, 1)  # fades out near the disc edges
 
-np.savez_compressed(f"{here}/stitched_{W}.npz", bt=bt.astype(np.float32), ht=ht.astype(np.float32), cov=coverage.astype(np.float32))
-print("bt range", np.nanmin(bt), np.nanmax(bt), "coverage", np.mean(coverage > 0), "acha", np.mean(np.isfinite(ht)))
+def view(sat, LON, LAT):
+    """One satellite on the grid: brightness temperature, cloud-top height (NaN without ACHA) and view cosine (-1 unseen)."""
+    x, y, vis, cosz = scan_angles(LON, LAT, *sat["proj"])
+    bt = sample(*sat["bt"], x, y); bt[~vis] = np.nan
+    if sat["ht"] is None:
+        ht = np.full_like(bt, np.nan)
+    else:
+        ht = sample(*sat["ht"], x, y); ht[~vis] = np.nan
+    return bt, ht, np.where(vis, cosz, -1)
+
+
+def stitch(LON, LAT, sats):
+    """Pick the satellite with the best view; feather seams by blending the two best within a small margin."""
+    cands = [view(s, LON, LAT) for s in sats]
+    cos = np.stack([np.where(np.isfinite(c[0]), c[2], -1) for c in cands])
+    bts = np.stack([c[0] for c in cands]); hts = np.stack([c[1] for c in cands])
+    order = np.argsort(-cos, axis=0)
+    best, second = order[0], order[1]
+    take = lambda arr, idx: np.take_along_axis(arr, idx[None], 0)[0]
+    c1, c2 = take(cos, best), take(cos, second)
+    w = np.clip((c1 - c2) / 0.08, 0, 1) * 0.5 + 0.5
+    b1, b2 = take(bts, best), take(bts, second)
+    bt = np.where(np.isfinite(b2) & (c2 > 0.05), w * b1 + (1 - w) * b2, b1)
+    bt = np.where(c1 > 0.05, bt, np.nan)
+    ht = take(hts, best)
+    coverage = np.clip((c1 - 0.05) / 0.15, 0, 1)  # fades out near the disc edges
+    return bt, ht, coverage
+
+
+if __name__ == "__main__":
+    W = int(sys.argv[1]) if len(sys.argv) > 1 else 4096; H = W // 2
+    here = os.path.dirname(os.path.abspath(__file__))
+    LON, LAT = grid(np.linspace(-180, 180, W, endpoint=False) + 180 / W, np.linspace(90, -90, H, endpoint=False) - 90 / H)
+    bt, ht, coverage = stitch(LON, LAT, load_sats(here))
+    np.savez_compressed(f"{here}/stitched_{W}.npz", bt=bt.astype(np.float32), ht=ht.astype(np.float32), cov=coverage.astype(np.float32))
+    print("bt range", np.nanmin(bt), np.nanmax(bt), "coverage", np.mean(coverage > 0), "acha", np.mean(np.isfinite(ht)))
