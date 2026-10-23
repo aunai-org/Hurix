@@ -151,7 +151,7 @@ So that every cloud on the globe moves while the loop plays, not only the storm,
 
 ### 4.7 HD tiles (`tiles.py`)
 
-For the **HD** switch, this step stitches the world again at 16384 × 8192 (about 2.4 km per pixel, near the satellites' own 2 km) and cuts it into 32 × 16 tiles of 512 px: `tiles/{row}_{col}.jpg`, row 0 at the north and column 0 at 180° W, in the same code as `ir_global.jpg`. Tiles no satellite sees are skipped, and `meta.json` lists the rest in `tiles.have` (usually around 390). It works in 16 latitude bands, two at a time, and takes about a minute.
+For the **HD** switch, this step stitches the world again at 16384 × 8192 (about 2.4 km per pixel, near the satellites' own 2 km) and cuts it into 32 × 16 tiles of 512 px: `tiles/<frame>/{row}_{col}.jpg` (the folder is named after the frame, so a page left open across a deploy never mixes in newer tiles), row 0 at the north and column 0 at 180° W, in the same code as `ir_global.jpg`. Tiles no satellite sees are skipped, and `meta.json` lists the rest in `tiles.have` (usually around 390). It works in 16 latitude bands, two at a time, and takes about a minute.
 
 ### 4.8 Motion between frames (`flow.py`)
 
@@ -180,7 +180,7 @@ Everything lives in `public/data/`:
 | `storms/sN/loop/fNN.jpg` | 1024 × 1024 | Infrared loop frames over the last 24 hours (30 minutes apart, 10 minutes in the last 6 hours) |
 | `storms/sN/loop/vNN.jpg` | 2048 × 2048 | True-colour loop frames, every 30 minutes over the last 6 hours, daylight only |
 | `globe/gNN.jpg` | 2048 × 1024 | Whole-globe infrared, once an hour over the last 24 hours (the frame itself is `ir_global.jpg`) |
-| `tiles/R_C.jpg` | 512 × 512 | HD infrared tiles, about 2.4 km per pixel ([4.7](#47-hd-tiles-tilespy)) |
+| `tiles/<frame>/R_C.jpg` | 512 × 512 | HD infrared tiles, about 2.4 km per pixel ([4.7](#47-hd-tiles-tilespy)) |
 | `storms/sN/loop/mNN.png`, `nNN.png`, `wNN.png`, `globe/mNN.png` | 128 × 128 or 256 × 128 | Motion between replay frames ([4.8](#48-motion-between-frames-flowpy)) |
 
 **How temperatures are stored.** An image pixel holds 0–255, so infrared images store a *code* instead of a temperature:
@@ -221,7 +221,7 @@ That covers 180 K to 320 K (−93 °C to +47 °C), more than any real cloud or s
 At the top level, beside `frame`, `storms`, `others` and `globeTimes`:
 
 ```jsonc
-"tiles": { "cols": 32, "rows": 16, "size": 512, "have": ["3_7", "…"] },  // the HD tiles written
+"tiles": { "cols": 32, "rows": 16, "size": 512, "have": ["3_7", "…"], "dir": "tiles/20261023T1310" },  // the HD tiles written, and their folder
 "flow": { "ir": 48, "vis": 64, "globe": 16 }                          // max motion each kind of motion file encodes
 ```
 

@@ -1,11 +1,12 @@
 """The HD cloud tiles: the stitched IR map at 16384 x 8192 (about 2.4 km a pixel) cut into 32 x 16 tiles of 512 px,
-written as tiles/{row}_{col}.jpg (row 0 at the north, col 0 at 180 W; same code as ir_global.jpg). Tiles no
-geostationary satellite sees are skipped; meta.json lists the rest in tiles.have. The page loads the ones around
-where you look when HD is on and you zoom in.
+written as tiles/<frame>/{row}_{col}.jpg (row 0 at the north, col 0 at 180 W; same code as ir_global.jpg). Tiles no
+geostationary satellite sees are skipped; meta.json lists the rest in tiles.have and their folder in tiles.dir. The
+folder is named after the frame, so a page left open across a deploy finds its tiles gone instead of mixing in new
+ones. The page loads the ones around where you look when HD is on and you zoom in.
 
 Usage: python3 tiles.py OUT_DIR      (after storms.py has written OUT_DIR/meta.json)
 """
-import json, os, sys
+import json, os, shutil, sys
 import concurrent.futures as cf
 import numpy as np
 from PIL import Image
@@ -25,12 +26,18 @@ def tile_lonlat(r, c, cols=COLS, rows=ROWS, size=SIZE):
     return lon, lat
 
 
+def tile_dir(frame):
+    """The tiles' folder under the data folder, for a frame time like 2026-10-23T13:10Z."""
+    return "tiles/" + frame.replace("-", "").replace(":", "").rstrip("Z")
+
+
 def main(out_dir):
-    folder = os.path.join(out_dir, "tiles")
-    os.makedirs(folder, exist_ok=True)
-    for f in os.listdir(folder):  # last run's tiles, so a tile gone dark is not served stale
-        if f.endswith(".jpg"):
-            os.remove(os.path.join(folder, f))
+    path = os.path.join(out_dir, "meta.json")
+    meta = json.load(open(path)) if os.path.exists(path) else None
+    sub = tile_dir(meta["frame"]) if meta else "tiles"
+    shutil.rmtree(os.path.join(out_dir, "tiles"), ignore_errors=True)  # earlier frames' tiles
+    folder = os.path.join(out_dir, sub)
+    os.makedirs(folder)
     sats = R.load_sats(HERE)
     arch_img = Image.open(os.path.join(HERE, "cache", "clouds.png")).convert("RGBA").getchannel("A")
     aw, ah = arch_img.size
@@ -61,9 +68,8 @@ def main(out_dir):
                     Image.fromarray(img[:, c * SIZE:(c + 1) * SIZE]).save(os.path.join(folder, f"{r}_{c}.jpg"), quality=85)
                     have.append(f"{r}_{c}")
             print("tiles row", r, sum(h.startswith(f"{r}_") for h in have))
-    path = os.path.join(out_dir, "meta.json")
-    if os.path.exists(path):
-        meta = json.load(open(path)); meta["tiles"] = {"cols": COLS, "rows": ROWS, "size": SIZE, "have": have}
+    if meta:
+        meta["tiles"] = {"cols": COLS, "rows": ROWS, "size": SIZE, "have": have, "dir": sub}
         json.dump(meta, open(path, "w"))
     return have
 

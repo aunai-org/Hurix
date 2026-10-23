@@ -28,3 +28,71 @@ describe("HD tile window", () => {
     expect(windowTiles(5, 13, some)).toEqual([{ id: "5_13", i: 0, j: 0 }, { id: "6_14", i: 1, j: 1 }]);
   });
 });
+
+import { HDAtlas, tileUrl } from "./tiles";
+
+// a canvas stand-in that records what is drawn where
+const fakeCanvas = () => {
+  const drawn: [string, number, number][] = [];
+  let made = 0;
+  const make = (w: number, h: number) => {
+    made++;
+    return { width: w, height: h, getContext: () => ({ clearRect: () => drawn.splice(0), drawImage: (img: { id: string }, x: number, y: number) => drawn.push([img.id, x, y]) }) };
+  };
+  return { drawn, make, made: () => made };
+};
+type Img = { id: string; close?(): void };
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+describe("HDAtlas", () => {
+  it("creates its canvas only when first pointed somewhere", () => {
+    const f = fakeCanvas();
+    const atlas = new HDAtlas<Img>(grid, f.make, async (id) => ({ id }));
+    expect(f.made()).toBe(0);
+    atlas.point(0, 0);
+    expect(f.made()).toBe(1);
+  });
+  it("a small drift doesn't move the window", () => {
+    const atlas = new HDAtlas<Img>(grid, fakeCanvas().make, async (id) => ({ id }));
+    atlas.point(0, 0);
+    const key = atlas.key;
+    atlas.point(0, 360 / 32 * 0.8);  // 0.8 of a tile east: rounding alone would move it
+    expect(atlas.key).toBe(key);
+    atlas.point(0, 360 / 32 * 1.2);
+    expect(atlas.key).not.toBe(key);
+  });
+  it("moving the window redraws loaded tiles at once, in their new places, and asks for an upload with the new rect", async () => {
+    const f = fakeCanvas();
+    const atlas = new HDAtlas<Img>(grid, f.make, async (id) => ({ id }));
+    atlas.point(0, 0); await flush(); atlas.take();
+    atlas.point(0, 360 / 32 * 1.2);  // one column east: 5 of 6 columns are shared
+    const up = atlas.take();
+    expect(up?.rect).toEqual(windowRect(5, 14, grid));
+    expect(f.drawn).toContainEqual(["5_14", 0, 0]);  // was at column 1, now at column 0, drawn before any await
+    expect(f.drawn.length).toBe(30);
+  });
+  it("a tile that arrives after the window moved on is not drawn", async () => {
+    const f = fakeCanvas();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const atlas = new HDAtlas<Img>(grid, f.make, async (id) => { await gate; return { id }; });
+    atlas.point(0, 0);
+    atlas.point(60, 120);
+    release(); await flush(); await flush();
+    expect(f.drawn.every(([id]) => windowTiles(atlas.r0, atlas.c0, grid).some((t) => t.id === id))).toBe(true);
+  });
+  it("closes tiles it evicts", async () => {
+    const closed: string[] = [];
+    const atlas = new HDAtlas<Img>(grid, fakeCanvas().make, async (id) => ({ id, close: () => closed.push(id) }), 6, 40);
+    atlas.point(0, 0); await flush();
+    atlas.point(0, 90); await flush();
+    expect(closed.length).toBeGreaterThan(0);
+  });
+});
+
+describe("tileUrl", () => {
+  it("reads the tiles from their frame's folder", () => {
+    expect(tileUrl({ ...grid, dir: "tiles/20261023T1310" }, "5_13")).toBe("data/tiles/20261023T1310/5_13.jpg");
+    expect(tileUrl(grid, "5_13")).toBe("data/tiles/5_13.jpg");
+  });
+});

@@ -20,3 +20,8 @@ def test_tile_lonlat_matches_global_grid():
     world = np.linspace(-180, 180, 16384, endpoint=False) + 180 / 16384
     lon, _ = T.tile_lonlat(7, 16)
     assert np.isclose(lon[0], world[16 * 512])
+
+
+def test_tiles_live_in_a_folder_named_after_their_frame():
+    # a page left open across a deploy then finds its old tiles gone (and falls back) instead of mixing in new ones
+    assert T.tile_dir("2026-10-23T13:10Z") == "tiles/20261023T1310"

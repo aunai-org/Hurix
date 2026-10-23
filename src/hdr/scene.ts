@@ -8,7 +8,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME, VOLUME_BLEND } from "./glsl";
 import { dvorak, frameDate, isoMs, subsolar, type Meta, type Storm } from "../meta";
-import { tileWindow, windowRect, windowTiles } from "./tiles";
+import { HDAtlas, tileUrl } from "./tiles";
 import { blendFor, fadeFor } from "./loop";
 import { category } from "../intensity";
 
@@ -164,50 +164,27 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const rmwOf = (s: Storm) => Math.max(15, (s.eyeDiameterKm ?? 30) * 0.65);
 
   // ---------- HD: a 6 x 6-tile window of 2.4 km cloud tiles around where the camera looks, drawn into one atlas ----------
-  const HD_N = 6, HD_DIST = 2.0;
+  // (made the first time HD is used; until then the shader reads a 1 x 1 transparent texture)
+  const HD_DIST = 2.0;
   const tiles = meta.tiles;
-  const hdCanvas = document.createElement("canvas");
-  hdCanvas.width = hdCanvas.height = HD_N * (tiles?.size ?? 1);
-  const hdCtx = hdCanvas.getContext("2d")!;
-  const hdTex = clamp(new THREE.CanvasTexture(hdCanvas)); hdTex.anisotropy = maxAniso;
-  const hdImages = new Map<string, Promise<ImageBitmap>>();  // decoded tiles, so panning back redraws at once
-  let hdWanted = false, hdKey = "", hdTicket = 0, hdDirty = false, hdUploaded = 0;
-  const hdImage = (id: string) => {
-    let p = hdImages.get(id);
-    if (!p) {
-      p = fetch(`${base}data/tiles/${id}.jpg`).then((r) => r.blob()).then((b) => createImageBitmap(b));
-      p.catch(() => hdImages.delete(id));
-      hdImages.set(id, p);
-      if (hdImages.size > 4 * HD_N * HD_N) hdImages.delete(hdImages.keys().next().value!);
-    }
-    return p;
-  };
-  /** Points the window at (lat, lon): when that moves it to other tiles, clears the atlas and loads them, 6 at a time. */
-  function hdWindow(lat: number, lon: number) {
-    const { r0, c0 } = tileWindow(lat, lon, tiles!, HD_N), key = `${r0}_${c0}`;
-    if (key === hdKey) return;
-    hdKey = key; const ticket = ++hdTicket;
-    hdCtx.clearRect(0, 0, hdCanvas.width, hdCanvas.height); hdDirty = true;
-    uni.hdRect.value.fromArray(windowRect(r0, c0, tiles!, HD_N));
-    const queue = windowTiles(r0, c0, tiles!, HD_N);
-    const worker = async () => {
-      for (let t = queue.shift(); t; t = queue.shift()) {
-        const img = await hdImage(t.id).catch(() => null);
-        if (ticket !== hdTicket) return;  // the window moved on while this tile loaded
-        if (img) { hdCtx.drawImage(img, t.j * tiles!.size, t.i * tiles!.size); hdDirty = true; }
-      }
-    };
-    for (let k = 0; k < 6; k++) void worker();
-  }
+  const noHD = new THREE.DataTexture(new Uint8Array(4), 1, 1); noHD.needsUpdate = true;
+  let hdWanted = false, hdUploaded = 0, hdTex: THREE.CanvasTexture | null = null;
+  const atlas = tiles && new HDAtlas<ImageBitmap>(tiles, (w, h) => Object.assign(document.createElement("canvas"), { width: w, height: h }),
+    async (id) => createImageBitmap(await (await fetch(base + tileUrl(tiles, id))).blob()));
   const sub = new THREE.Vector3();
   function syncHD() {
-    const on = hdWanted && !playing && !!tiles && camera.position.length() < HD_DIST;
+    const on = hdWanted && !playing && !!atlas && camera.position.length() < HD_DIST;
     uni.hdOn.value = on ? 1 : 0;
-    if (!on) return;
+    if (!on || !atlas) return;
     sub.copy(camera.position).normalize();
-    hdWindow(Math.asin(sub.y) / D2R, ((Math.atan2(sub.z, -sub.x) / D2R + 360) % 360) - 180);
-    // the atlas is 3072 px square: send it to the GPU at most five times a second while tiles arrive
-    if (hdDirty && performance.now() - hdUploaded > 200) { hdTex.needsUpdate = true; hdDirty = false; hdUploaded = performance.now(); }
+    atlas.point(Math.asin(sub.y) / D2R, ((Math.atan2(sub.z, -sub.x) / D2R + 360) % 360) - 180);
+    if (!hdTex) { hdTex = clamp(new THREE.CanvasTexture(atlas.canvas as HTMLCanvasElement)); hdTex.anisotropy = maxAniso; uni.hd.value = hdTex; }
+    // the atlas is 3072 px square: while tiles arrive, send it at most five times a second; a moved window goes at once,
+    // with its new rect, so the GPU never draws tiles in the wrong place
+    if (atlas.urgent || performance.now() - hdUploaded > 200) {
+      const up = atlas.take();
+      if (up) { hdTex.needsUpdate = true; uni.hdRect.value.fromArray(up.rect); hdUploaded = performance.now(); }
+    }
   }
 
   // ---------- uniforms shared by every material ----------
@@ -240,7 +217,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     realSun: { value: 0 },
     rmw: { value: 30 },
     vmax: { value: 100 },
-    hd: { value: hdTex as THREE.Texture },
+    hd: { value: noHD as THREE.Texture },
     hdRect: { value: new THREE.Vector4(0, 0, 1, 1) },
     hdOn: { value: 0 },
     frameFlow: { value: noMotion as THREE.Texture },
