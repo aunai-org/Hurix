@@ -35,7 +35,8 @@ A few more controls:
 
 - **Light:** *Even* uses a fixed light that shows the 3D shapes clearly. *Real sun* puts the sun where it really was at the frame time, so half the globe is in night.
 - **Paths:** draws each storm's official past track. Each checkpoint is coloured by the official wind at that time, on the Saffir–Simpson scale (blue for a depression up to red for category 5), with a key in the Legend. It's off at first.
-- **Replay**, ▶ with **6 h / 12 h / 24 h:** replays the real satellite frames for the last 6 hours (every 10 minutes), 12 hours or 24 hours (every 30 minutes). The clouds move across the whole globe too, from hourly world frames. Each frame is held sharp, then dissolves quickly into the next. The frames load the first time you play a length.
+- **HD:** when you zoom in, loads sharper cloud pictures (about 2.4 km per pixel instead of 10 km) for the area you're looking at. It's off at first, and it rests while the replay plays.
+- **Replay**, ▶ with **6 h / 12 h / 24 h:** replays the real satellite frames for the last 6 hours (every 10 minutes), 12 hours or 24 hours (every 30 minutes). The clouds move across the whole globe too, from hourly world frames. The clouds slide from one frame to the next along their real motion, measured between the frames, instead of fading. The frames load the first time you play a length.
 - **Height ×** (in the two 3D views) stretches the cloud heights.
 - **Storm and Legend:** two tabs on the right edge. Each opens a panel (the storm's details, or what the colours mean) that slides back out of the way by itself.
 
@@ -88,6 +89,8 @@ src/main.ts        start-up: loads the data, builds the globe, binds the control
 src/meta.ts        the frame and its storms, formatting, the intensity estimate, where the sun is
 src/hdr/scene.ts   the three.js scene: HDR pipeline, Earth, clouds, atmosphere, track, imagery patch, 3D views, camera
 src/hdr/glsl.ts    the shaders
+src/hdr/tiles.ts   which HD tiles surround the view
+src/hdr/loop.ts    how the replay moves from one frame to the next
 src/ui.ts          buttons, panels, legend, loop player and labels
 src/style.css      the page's look
 pipeline/          the Python data refresh (see above)

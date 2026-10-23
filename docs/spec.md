@@ -107,7 +107,7 @@ For every pixel of the world map it:
 2. picks the satellite that looks at it most directly, because that view is sharpest;
 3. blends smoothly where two satellites overlap, so there's no seam.
 
-It writes the stitched temperatures and a *coverage* map (how well any satellite sees each spot) to `stitched_4096.npz`.
+It writes the stitched temperatures and a *coverage* map (how well any satellite sees each spot) to `stitched_4096.npz`. The same `load_sats()` and `stitch()` work for any longitude and latitude grid, which is how `tiles.py` makes the HD tiles.
 
 ### 4.3 Export (`export.py`)
 
@@ -135,7 +135,7 @@ Turns the stitched map into the images the page loads:
 
 ### 4.5 True colour (`visible.py`)
 
-For each storm it builds a true-colour close-up at 1 km per pixel (`storm_vis.jpg`, 2048 × 2048), plus true-colour loop frames every 30 minutes over the last 6 hours wherever the storm was in daylight (`loop/v00.jpg` onward, 2048 × 2048, the same size as the still). While the 6-hour loop plays, the page holds each one sharp for three quarters of its 30 minutes and then dissolves quickly to the next underneath the 10-minute infrared frames; if night falls inside that span, the loop plays in infrared.
+For each storm it builds a true-colour close-up at 1 km per pixel (`storm_vis.jpg`, 2048 × 2048), plus true-colour loop frames every 30 minutes over the last 6 hours wherever the storm was in daylight (`loop/v00.jpg` onward, 2048 × 2048, the same size as the still). While the 6-hour loop plays, the page slides each one toward the next along their measured motion underneath the 10-minute infrared frames ([4.8](#48-motion-between-frames-flowpy)); if night falls inside that span, the loop plays in infrared.
 
 1. **Read only what's needed.** GOES visible files are large (band 2 is about 200 MB per full disk), so the code reads just the window around the storm. For Himawari it downloads only the tiles that cover the storm.
 2. **Resample** each band onto the storm's close-up grid.
@@ -148,6 +148,23 @@ Where the sun was down, there's no visible picture, so the page shows infrared t
 ### 4.6 The whole-globe loop (`globe.py`)
 
 So that every cloud on the globe moves while the loop plays, not only the storm, this step stitches the whole world once an hour over the last 24 hours. It downloads the three satellites' full disks for each hour (Himawari's 88 tiles included), averages each satellite's 2 km pixels into 8 km blocks, and maps them onto a 2048 × 1024 world map the same way `reproject.py` does, with the same archive clouds in the Meteosat gap. The frames are written as `globe/g00.jpg` onward, and their times go into `meta.json` as `globeTimes`. The hours are stitched three at a time, in separate processes, and take a few minutes in all.
+
+### 4.7 HD tiles (`tiles.py`)
+
+For the **HD** switch, this step stitches the world again at 16384 × 8192 (about 2.4 km per pixel, near the satellites' own 2 km) and cuts it into 32 × 16 tiles of 512 px: `tiles/{row}_{col}.jpg`, row 0 at the north and column 0 at 180° W, in the same code as `ir_global.jpg`. Tiles no satellite sees are skipped, and `meta.json` lists the rest in `tiles.have` (usually around 390). It works in 16 latitude bands, two at a time, and takes about a minute.
+
+### 4.8 Motion between frames (`flow.py`)
+
+So the replay can slide the clouds instead of fading, this step measures how they moved between each pair of frames the page plays one after the other. It uses OpenCV's DIS optical flow on the full frames and averages the result down to a small grid, written as a PNG: red = 128 + dx ÷ max × 127, green = 128 + dy ÷ max × 127, in the frame's own pixels, with dy pointing down the picture. A motion bigger than the max is clipped.
+
+| File | Grid | From → to | Max |
+| --- | --- | --- | --- |
+| `storms/sN/loop/mNN.png` | 128 × 128 | `fNN` → `fNN+1` | 48 px |
+| `storms/sN/loop/nNN.png` | 128 × 128 | `fNN` → the next frame 30 minutes on, where that isn't `fNN+1` (the 12 and 24 h replays) | 48 px |
+| `storms/sN/loop/wNN.png` | 128 × 128 | `vNN` → `vNN+1` | 64 px |
+| `globe/mNN.png` | 256 × 128 | `gNN` → `gNN+1`; the last one to `ir_global.jpg` | 16 px |
+
+The maxima go into `meta.json` as `flow`. Both `tiles.py` and `flow.py` are extras: if either fails, the run carries on and the page does without that layer.
 
 ## 5. The files the page loads
 
@@ -163,6 +180,8 @@ Everything lives in `public/data/`:
 | `storms/sN/loop/fNN.jpg` | 1024 × 1024 | Infrared loop frames over the last 24 hours (30 minutes apart, 10 minutes in the last 6 hours) |
 | `storms/sN/loop/vNN.jpg` | 2048 × 2048 | True-colour loop frames, every 30 minutes over the last 6 hours, daylight only |
 | `globe/gNN.jpg` | 2048 × 1024 | Whole-globe infrared, once an hour over the last 24 hours (the frame itself is `ir_global.jpg`) |
+| `tiles/R_C.jpg` | 512 × 512 | HD infrared tiles, about 2.4 km per pixel ([4.7](#47-hd-tiles-tilespy)) |
+| `storms/sN/loop/mNN.png`, `nNN.png`, `wNN.png`, `globe/mNN.png` | 128 × 128 or 256 × 128 | Motion between replay frames ([4.8](#48-motion-between-frames-flowpy)) |
 
 **How temperatures are stored.** An image pixel holds 0–255, so infrared images store a *code* instead of a temperature:
 
@@ -199,6 +218,15 @@ That covers 180 K to 320 K (−93 °C to +47 °C), more than any real cloud or s
 
 `others` lists the active storms without a close-up, with the same official fields plus `lat` and `lon`.
 
+At the top level, beside `frame`, `storms`, `others` and `globeTimes`:
+
+```jsonc
+"tiles": { "cols": 32, "rows": 16, "size": 512, "have": ["3_7", "…"] },  // the HD tiles written
+"flow": { "ir": 48, "vis": 64, "globe": 16 }                          // max motion each kind of motion file encodes
+```
+
+Both are absent in data from before HD and the sliding replay; the page then hides HD and holds and fades the replay.
+
 ## 6. How the page draws the globe
 
 The page is TypeScript, built by Vite. `src/main.ts` loads `meta.json`, builds the scene (`src/hdr/scene.ts`) and wires up the controls (`src/ui.ts`).
@@ -212,7 +240,7 @@ From the inside out:
 | Layer | Shader | What it does |
 | --- | --- | --- |
 | Earth | `EARTH` | Blue Marble by day, city lights at night, with the land/water mask and terrain bumps for relief |
-| Clouds | `CLOUDS` | The global infrared layer on a shell just above the ground. Each pixel's code becomes a temperature, then an opacity (warm sea is clear, cold tops are solid) and a colour from the current style. Clouds cast a soft shadow on the ground. While the loop plays, it blends the two hourly globe frames either side of the moment, so the clouds move everywhere. |
+| Clouds | `CLOUDS` | The global infrared layer on a shell just above the ground. Each pixel's code becomes a temperature, then an opacity (warm sea is clear, cold tops are solid) and a colour from the current style. Clouds cast a soft shadow on the ground. While the loop plays, it slides the two hourly globe frames either side of the moment along their motion, so the clouds move everywhere. With **HD** on, zoomed in (camera closer than 2 Earth radii) and the loop paused, it draws a 6 × 6-tile window of the HD tiles around the point below the camera; outside the window, or until a tile has loaded, it shows the global layer. |
 | Imagery patch | `IMAGERY` | The selected storm's sharp close-up, draped over the globe (Satellite view only). Its edges fade into the global clouds, so there's no square seam. |
 | Atmosphere | `ATMOSPHERE` | A faint blue rim that fades softly into space |
 | Sky | `SKY` | The star background |
@@ -235,6 +263,8 @@ The scene is drawn in *high dynamic range*: colours can be brighter than white, 
 ### 6.4 The interface
 
 `src/ui.ts` handles the bar at the bottom (View, Colours, Light, Layers and Replay, each with a small caption; one row on a desktop, a two-column grid on a phone), the storm list, the city and storm labels (storms without a close-up are dimmed and fly the camera to them), and the two drawers on the right edge (Storm and Legend), which close by themselves after a few seconds. The legend's colour ramp is built from the same palette the shaders use.
+
+**The replay.** Each shader that reads loop frames (the cloud shell, the imagery patch, Cloud heights and 3D storm) carries frame A forward along the motion and frame B back, by how far the moment is between them (`src/hdr/loop.ts`). The two then dissolve only through the middle of the slot, where the motion has lined them up, so one sharp frame is on screen most of the time. A pair without a motion file holds the first frame for three quarters of its slot, then fades quickly to the next, as before.
 
 **Paths.** With Paths on, each storm's official past track is drawn as a thin grey line with a dot at every checkpoint, coloured by the official wind then (`src/intensity.ts`): below 34 kt `#5ebaff` (depression), 34–63 `#00faf4` (tropical storm), then categories 1–5 at 64, 83, 96, 113 and 137 kt (`#ffffcc`, `#ffe775`, `#ffc140`, `#ff8f20`, `#ff6060`), and grey where there's no official wind.
 
