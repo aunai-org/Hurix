@@ -1,11 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <title>Earth Template</title>
+  <title>Hurrix</title>
   <rect width="64" height="64" rx="14" fill="#07080b"/>
-  <g transform="translate(32 32) scale(.86) translate(-32 -32)">
-    <circle cx="32" cy="32" r="19" fill="none" stroke="#e4e7ea" stroke-width="4"/>
-    <ellipse cx="32" cy="32" rx="8" ry="19" fill="none" stroke="#e4e7ea" stroke-width="2.6"/>
-    <path d="M13 32h38" fill="none" stroke="#e4e7ea" stroke-width="2.6" stroke-linecap="round"/>
-    <ellipse cx="32" cy="32" rx="29" ry="9.5" transform="rotate(-25 32 32)" fill="none" stroke="#e4e7ea" stroke-width="2.6" opacity=".8"/>
-    <circle cx="58.3" cy="19.7" r="4.8" fill="#f5a04a"/>
+  <g transform="translate(32 32) scale(1.06) translate(-32 -32)" fill="none" stroke="#f2f3f5" stroke-width="5" stroke-linecap="round">
+    <circle cx="32" cy="32" r="8.5"/>
+    <path d="M40.5 32C40.5 21 31 14.5 18 16.5"/>
+    <path d="M23.5 32C23.5 43 33 49.5 46 47.5"/>
+    <circle cx="32" cy="32" r="3.6" fill="#f5a04a" stroke="none"/>
   </g>
 </svg>

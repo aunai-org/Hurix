@@ -17,7 +17,9 @@ html, body { height: 100%; }
 body { margin: 0; background: var(--space); color: var(--ink); font: 13px/1.45 var(--mono); overflow: hidden; }
 #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); }
-.brand { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
+.brand { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); display: flex; align-items: center; gap: 10px; pointer-events: none; }
+.brand > div { display: flex; flex-direction: column; gap: 2px; }
+.mark { width: 32px; height: 32px; flex: none; color: var(--ink); }
 .brand b { font-size: 18px; letter-spacing: .38em; font-weight: 600; }
 .brand span { color: var(--muted); font-size: 11.5px; }
 .live { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); }
@@ -67,6 +69,12 @@ body { margin: 0; background: var(--space); color: var(--ink); font: 13px/1.45 v
 [hidden] { display: none !important; }
 #loading div { display: flex; flex-direction: column; gap: 10px; align-items: center; color: var(--muted); }
 #loading progress { width: 220px; accent-color: var(--accent); }
+#loading .mark { width: 72px; height: 72px; margin-bottom: 8px; }
+#loading .wordmark { color: var(--ink); font-size: 18px; font-weight: 600; letter-spacing: .38em; margin: 0 -.38em 8px 0; }
+/* turns counter-clockwise, like a northern-hemisphere storm */
+.spin { animation: spin 7s linear infinite; }
+@keyframes spin { to { transform: rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 .hint { color: var(--muted); font-size: 11px; }
 .label { z-index: 1; }
 .panel { z-index: 2; }
@@ -98,6 +106,7 @@ body { margin: 0; background: var(--space); color: var(--ink); font: 13px/1.45 v
   .seg button { padding: 0 10px; }
 }
 @media (max-width: 600px) {
+  .brand .mark { width: 28px; height: 28px; }
   .bar { width: calc(100% - 24px); max-width: none; display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; padding: 10px 12px 12px; }
   .grp-view, .grp-colours, .grp-replay, .grp-height { grid-column: 1 / -1; }
   .grp .seg button { flex: 1; padding: 0 6px; }
