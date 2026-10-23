@@ -16,4 +16,5 @@ done
 P="AHI-L2-FLDK-ISatSS/$(date -u -d "$F" +%Y/%m/%d/%H%M)/"
 { curl -sS "https://noaa-himawari9.s3.amazonaws.com/?list-type=2&prefix=$P&max-keys=1000"; curl -sS "https://noaa-himawari9.s3.amazonaws.com/?list-type=2&prefix=$P&max-keys=1000&start-after=${P}OR_HFD-020-B12-M1C12"; } | grep -oE '<Key>[^<]+' | sed 's/<Key>//' | grep M1C13 | sort -u | xargs -P 16 -I{} sh -c 'curl -sS -o hima/'$S'/$(basename {}) "https://noaa-himawari9.s3.amazonaws.com/{}"'
 wait
-echo "hima tiles: $(ls hima/$S | wc -l)"
+n=$(ls hima/$S | wc -l); echo "hima tiles: $n"
+[ "$n" -ge 80 ] || { echo "too few Himawari tiles at $F"; exit 1; }

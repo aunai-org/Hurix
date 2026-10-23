@@ -11,6 +11,8 @@ if [ ! -f cache/clouds.png ]; then
   mkdir -p cache
   curl -sS https://registry.npmjs.org/three-globe/-/three-globe-2.45.6.tgz | tar xz -C cache --strip-components=3 package/example/clouds/clouds.png
 fi
+# Himawari skips the 02:40 and 14:40 slots every day, so take the slot before
+case $F in *T02:40|*T14:40) F=$(date -u -d "$F 10 minutes ago" +%Y-%m-%dT%H:%M);; esac
 echo "frame $F"
 ./fetch.sh "$F"
 python3 -W ignore reproject.py 4096
