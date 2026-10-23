@@ -7,7 +7,7 @@ up), from whichever geostationary satellite sees the storm best: Himawari-9, GOE
 
 Usage: FRAME=YYYY-MM-DDTHH:MM python3 storms.py OUT_DIR      (after fetch.sh and reproject.py for that frame)
 """
-import glob, json, os, sys, shutil, urllib.parse, urllib.request
+import glob, http.client, json, os, sys, shutil, urllib.parse, urllib.request
 import concurrent.futures as cf
 from datetime import datetime, timedelta
 import numpy as np
@@ -93,7 +93,12 @@ def listing(bucket, prefix):
     keys, token = [], None
     while True:
         url = f"https://{bucket}.s3.amazonaws.com/?list-type=2&prefix={prefix}&max-keys=1000" + (f"&continuation-token={urllib.parse.quote(token)}" if token else "")
-        x = urllib.request.urlopen(url, timeout=60).read().decode()
+        for attempt in range(3):  # S3 now and then cuts a listing off mid-reply
+            try:
+                x = urllib.request.urlopen(url, timeout=60).read().decode(); break
+            except (OSError, http.client.HTTPException):
+                if attempt == 2:
+                    raise
         keys += [k.split("</Key>")[0] for k in x.split("<Key>")[1:]]
         if "<NextContinuationToken>" not in x:
             return keys
