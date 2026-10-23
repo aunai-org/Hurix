@@ -1,0 +1,52 @@
+import pathlib, sys
+import numpy as np
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+import flow as F  # noqa: E402
+
+
+def blob(x, y, n=256, sigma=12):
+    yy, xx = np.mgrid[:n, :n]
+    return (np.exp(-((xx - x) ** 2 + (yy - y) ** 2) / (2 * sigma ** 2)) * 200 + 20).astype(np.uint8)
+
+
+def test_motion_finds_a_shift():
+    a, b = blob(100, 120), blob(106, 116)
+    f = F.motion(a, b, (256, 256))
+    region = f[105:135, 85:115]
+    assert abs(np.median(region[..., 0]) - 6) <= 1 and abs(np.median(region[..., 1]) + 4) <= 1
+
+
+def test_encode_round_trip():
+    rng = np.random.default_rng(1)
+    f = rng.uniform(-48, 48, (16, 32, 2)).astype(np.float32)
+    back = F.decode(F.encode(f, 48), 48)
+    assert back.shape == f.shape and np.abs(back - f).max() <= 48 / 127
+
+
+def test_encode_clips():
+    f = np.zeros((4, 4, 2), np.float32); f[..., 0] = 3 * 48; f[..., 1] = -3 * 48
+    back = F.decode(F.encode(f, 48), 48)
+    assert np.allclose(back[..., 0], 48) and np.allclose(back[..., 1], -48)
+
+
+def test_interpolate_moves_the_blob_halfway():
+    a, b = blob(100, 120), blob(106, 116)
+    f = F.motion(a, b, (256, 256))
+    mid = F.interpolate(a.astype(np.float32), b.astype(np.float32), f, 0.5)
+    y, x = np.unravel_index(np.argmax(mid), mid.shape)
+    assert abs(x - 103) <= 1 and abs(y - 118) <= 1
+    assert mid.max() - 20 >= 0.9 * (a.max() - 20.0)
+
+
+def test_replay_pairs_cover_the_30_minute_steps():
+    # 30-minute frames, then 10-minute frames for the last hour (as storms.py writes them)
+    times = ["2026-10-22T19:40Z", "2026-10-22T20:10Z", "2026-10-22T20:40Z", "2026-10-22T20:50Z", "2026-10-22T21:00Z",
+             "2026-10-22T21:10Z", "2026-10-22T21:20Z", "2026-10-22T21:30Z", "2026-10-22T21:40Z"]
+    assert F.replay_pairs(times) == [(0, 1, "m"), (1, 2, "m"), (2, 3, "m"), (3, 4, "m"), (4, 5, "m"), (5, 6, "m"), (6, 7, "m"),
+                                     (7, 8, "m"), (2, 5, "n"), (5, 8, "n")]
+
+
+def test_replay_pairs_skip_a_missing_30_minute_frame():
+    times = ["2026-10-22T20:40Z", "2026-10-22T20:50Z", "2026-10-22T21:00Z", "2026-10-22T21:20Z", "2026-10-22T21:30Z", "2026-10-22T21:40Z"]
+    # 21:10 is missing: 20:40 -> 21:10 can't be made, so its pair goes to the next 30-minute frame the page plays (21:40)
+    assert F.replay_pairs(times)[-1] == (0, 5, "n")

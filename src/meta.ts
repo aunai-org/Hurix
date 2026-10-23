@@ -1,4 +1,5 @@
 // Everything about the frame comes from data/meta.json, written by pipeline/export.py.
+import type { TileGrid } from "./hdr/tiles";
 
 /** One storm, as measured from its own 2 km close-up. */
 export interface Storm {
@@ -60,6 +61,10 @@ export interface Meta {
   globeTimes?: string[];
   /** Storms with a warning but no imagery here. */
   others: OtherStorm[];
+  /** The HD cloud tiles (data/tiles/r_c.jpg) the pipeline wrote; absent before HD existed. */
+  tiles?: TileGrid;
+  /** Largest motion, in frame pixels, the replay's motion files encode (pipeline/flow.py); absent without them. */
+  flow?: { ir: number; vis: number; globe: number };
 }
 
 export async function loadMeta(base: string): Promise<Meta> {
@@ -68,7 +73,7 @@ export async function loadMeta(base: string): Promise<Meta> {
   const raw = await res.json();
   // the first pipeline wrote one storm at the top level, with its files directly in data/
   if (!raw.storms) return { frame: raw.frame, others: [], storms: [{ ...raw, id: "s1", satellite: "Himawari-9", dir: "data/" }] };
-  return { frame: raw.frame, globeTimes: raw.globeTimes, others: raw.others ?? [], storms: (raw.storms as Omit<Storm, "dir">[]).map((s) => ({ ...s, dir: `data/storms/${s.id}/` })) };
+  return { frame: raw.frame, globeTimes: raw.globeTimes, tiles: raw.tiles, flow: raw.flow, others: raw.others ?? [], storms: (raw.storms as Omit<Storm, "dir">[]).map((s) => ({ ...s, dir: `data/storms/${s.id}/` })) };
 }
 
 export const frameDate = (meta: Meta) => new Date(meta.frame.replace("Z", ":00Z"));
