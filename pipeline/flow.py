@@ -3,6 +3,8 @@ the next. DIS optical flow (OpenCV) on each pair, averaged down to a small grid 
 R = 128 + dx/max*127, G = 128 + dy/max*127, in source pixels, dy pointing down the image (clipped at +-max).
 
   storms/<id>/loop/mNN.png   fNN -> fNN+1 (infrared, 128 x 128)
+  storms/<id>/loop/nNN.png   fNN -> the next frame on the 30-minute grid, where that isn't fNN+1 (the 12 and 24 h
+                             replays step every third 10-minute frame over the last 6 hours)
   storms/<id>/loop/wNN.png   vNN -> vNN+1 (true colour, 128 x 128)
   globe/mNN.png              gNN -> gNN+1, the last one to ir_global.jpg (256 x 128)
 
@@ -10,6 +12,7 @@ meta.json gets "flow": the max of each kind. A pair without a file falls back to
 Usage: python3 flow.py OUT_DIR      (last, after globe.py)
 """
 import json, os, sys
+from datetime import datetime
 import cv2
 import numpy as np
 from PIL import Image
@@ -49,14 +52,24 @@ def grey(path, size=None):
     return np.asarray(im.resize(size, Image.BILINEAR) if size and im.size != size else im)
 
 
-def pairs(frames, prefix, folder, max_px, grid):
-    """Motion files for consecutive frames; returns how many were written."""
-    n = 0
-    for i, (a, b) in enumerate(zip(frames, frames[1:])):
-        A = grey(a); B = grey(b, Image.open(a).size)
+def replay_pairs(times):
+    """(from, to, prefix) for every pair of storm loop frames the page plays one after the other: each frame to the next
+    ("m"), and on the 30-minute grid counted back from the last frame, each to the next grid frame where that skips some ("n")."""
+    ms = [datetime.strptime(t, "%Y-%m-%dT%H:%MZ").timestamp() for t in times]
+    grid = [i for i, t in enumerate(ms) if round((ms[-1] - t) / 60) % 30 == 0]
+    return [(i, i + 1, "m") for i in range(len(times) - 1)] + [(i, j, "n") for i, j in zip(grid, grid[1:]) if j != i + 1]
+
+
+def pairs(frames, todo, folder, max_px, grid):
+    """Motion files for the (from, to, prefix) pairs of frame paths; returns how many were written."""
+    for i, j, prefix in todo:
+        A = grey(frames[i]); B = grey(frames[j], Image.open(frames[i]).size)
         encode(motion(A, B, grid), max_px).save(os.path.join(folder, f"{prefix}{i:02d}.png"), optimize=True)
-        n += 1
-    return n
+    return len(todo)
+
+
+def chain(n):
+    return [(i, i + 1, "m") for i in range(n - 1)]
 
 
 def main(out_dir):
@@ -65,8 +78,9 @@ def main(out_dir):
     for st in meta.get("storms", []):
         loop = os.path.join(out_dir, "storms", st["id"], "loop")
         try:  # one storm that fails falls back to hold-then-fade; the others still slide
-            ir = pairs([os.path.join(loop, f"f{i:02d}.jpg") for i in range(st.get("loopFrames", 0))], "m", loop, MAX["ir"], STORM_GRID)
-            vis = pairs([os.path.join(loop, f"v{i:02d}.jpg") for i in range(len(st.get("visTimes") or []))], "w", loop, MAX["vis"], STORM_GRID)
+            times, vt = st.get("loopTimes") or [], st.get("visTimes") or []
+            ir = pairs([os.path.join(loop, f"f{i:02d}.jpg") for i in range(len(times))], replay_pairs(times), loop, MAX["ir"], STORM_GRID)
+            vis = pairs([os.path.join(loop, f"v{i:02d}.jpg") for i in range(len(vt))], [(i, j, "w") for i, j, _ in chain(len(vt))], loop, MAX["vis"], STORM_GRID)
             print(st["id"], "motion:", ir, "infrared,", vis, "true colour")
         except Exception as e:
             print(st["id"], "motion skipped:", e)
@@ -74,7 +88,7 @@ def main(out_dir):
     try:
         frames = [os.path.join(globe, f"g{i:02d}.jpg") for i in range(len(meta.get("globeTimes") or []))]
         frames += [os.path.join(out_dir, "ir_global.jpg")] if frames else []  # the page plays the frame itself last
-        print("globe motion:", pairs(frames, "m", globe, MAX["globe"], GLOBE_GRID))
+        print("globe motion:", pairs(frames, chain(len(frames)), globe, MAX["globe"], GLOBE_GRID))
     except Exception as e:
         print("globe motion skipped:", e)
     meta["flow"] = MAX

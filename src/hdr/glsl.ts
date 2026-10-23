@@ -33,7 +33,8 @@ export const GLSL_IR = /* glsl */ `
 
 /** Height field of the storm frame, cross-fading two loop frames, lightly smoothed so single pixels don't spike. */
 const GLSL_FRAME = /* glsl */ `
-  float codeAt(vec2 uv){ return mix(texture2D(frameA, uv).r, texture2D(frameB, uv).r, frameMix); }
+  float codeAt(vec2 uv){ vec2 F = flowAt(frameFlow, uv, frameFlowMax);
+    return mix(texture2D(frameA, uv - frameMix * F).r, texture2D(frameB, uv + (1.0 - frameMix) * F).r, frameFade); }
   float hAt(vec2 uv){ vec2 o = vec2(2.0 / 768.0, 0.0);
     return (topKm(btOf(codeAt(uv))) * 2.0 + topKm(btOf(codeAt(uv + o))) + topKm(btOf(codeAt(uv - o))) + topKm(btOf(codeAt(uv + o.yx))) + topKm(btOf(codeAt(uv - o.yx)))) / 6.0; }
 `;
@@ -47,8 +48,20 @@ const SPHERE_VERTEX = /* glsl */ `
   varying vec2 vUv; varying vec3 vN; varying vec3 vP;
   void main(){ vUv = uv; vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position,1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
 
-// the global IR while a loop plays: two hourly frames either side of the moment, cross-faded
-const GLOBE_IR = /* glsl */ `float irAt(vec2 uv) { return mix(texture2D(ir, uv).r, texture2D(irB, uv).r, irMix); }`;
+/**
+ * Motion between the two replay frames on screen (pipeline/flow.py): rg = 0.5 + dx/max * 127/255, in the frame's pixels,
+ * y down the image. A frame is carried forward along it and the next one back, so clouds slide instead of fading.
+ * Paused, or for a pair without a motion file, the textures are a neutral 1 x 1 pixel: no motion.
+ */
+const FLOW = /* glsl */ `
+  uniform sampler2D frameFlow, visFlow, irFlow; uniform vec2 frameFlowMax, visFlowMax, irFlowMax;
+  uniform float frameFade, visFade, irFade;  // how much of the next frame shows; the *Mix uniforms are how far along the motion
+  vec2 flowAt(sampler2D m, vec2 uv, vec2 maxUv) { vec2 f = (texture2D(m, uv).rg * 255.0 - 128.0) / 127.0 * maxUv; return vec2(f.x, -f.y); }
+`;
+
+// the global IR while a loop plays: two hourly frames either side of the moment, slid along their motion and cross-faded
+const GLOBE_IR = /* glsl */ `float irAt(vec2 uv) { vec2 F = flowAt(irFlow, uv, irFlowMax);
+  return mix(texture2D(ir, uv - irMix * F).r, texture2D(irB, uv + (1.0 - irMix) * F).r, irFade); }`;
 
 /** Blue Marble day side, city lights at night, ocean glint, terrain bump, and shadows cast by the IR clouds. */
 export const EARTH = {
@@ -56,6 +69,7 @@ export const EARTH = {
   fragment: /* glsl */ `
     uniform sampler2D day, night, water, topo, ir, irB; uniform vec3 sunDir; uniform float style, irMix; varying vec2 vUv; varying vec3 vN; varying vec3 vP;
     ${GLSL_IR}
+    ${FLOW}
     ${GLOBE_IR}
     void main(){
       vec3 N = normalize(vN), V = normalize(cameraPosition - vP), L = normalize(sunDir);
@@ -97,6 +111,7 @@ export const CLOUDS = {
     uniform vec4 hdRect;
     varying vec2 vUv; varying vec3 vN; varying vec3 vP;
     ${GLSL_IR}
+    ${FLOW}
     ${GLOBE_IR}
     // the HD window: sharper tiles where they have loaded (alpha 1), the global map everywhere else
     // (sampled outside any branch, so the GPU still picks the right mip level)
@@ -169,8 +184,11 @@ export const IMAGERY = {
     vec3 visAt(vec2 uv); uniform float frameMix, visMix, style, visOn, realSun; uniform vec3 sunDir, sunReal;
     varying vec2 vUv; varying vec3 vUp; varying vec3 vP;
     ${GLSL_IR}
-    vec3 visAt(vec2 uv){ return mix(texture2D(vis, uv).rgb, texture2D(visB, uv).rgb, visMix); }
-    float codeAt(vec2 uv){ return mix(texture2D(frameA, uv).r, texture2D(frameB, uv).r, frameMix); }
+    ${FLOW}
+    vec3 visAt(vec2 uv){ vec2 F = flowAt(visFlow, uv, visFlowMax);
+    return mix(texture2D(vis, uv - visMix * F).rgb, texture2D(visB, uv + (1.0 - visMix) * F).rgb, visFade); }
+    float codeAt(vec2 uv){ vec2 F = flowAt(frameFlow, uv, frameFlowMax);
+    return mix(texture2D(frameA, uv - frameMix * F).r, texture2D(frameB, uv + (1.0 - frameMix) * F).r, frameFade); }
     void main(){
       float edge = 1.0 - smoothstep(0.38, 0.47, max(abs(vUv.x - 0.5), abs(vUv.y - 0.5)));
       if (edge <= 0.0) discard;
@@ -201,6 +219,7 @@ export const CLOUD_TOPS = {
     uniform sampler2D frameA, frameB; uniform float frameMix, exag, patchAng; uniform vec3 eye, east, north;
     varying vec2 vUv; varying vec3 vUp; varying vec3 vP;
     ${GLSL_IR}
+    ${FLOW}
     ${GLSL_FRAME}
     void main(){
       vUv = uv;
@@ -217,7 +236,9 @@ export const CLOUD_TOPS = {
     vec3 visAt(vec2 uv); uniform float frameMix, visMix, exag, style, visOn, patchAng; uniform vec3 sunDir, east, north;
     varying vec2 vUv; varying vec3 vUp; varying vec3 vP;
     ${GLSL_IR}
-    vec3 visAt(vec2 uv){ return mix(texture2D(vis, uv).rgb, texture2D(visB, uv).rgb, visMix); }
+    ${FLOW}
+    vec3 visAt(vec2 uv){ vec2 F = flowAt(visFlow, uv, visFlowMax);
+    return mix(texture2D(vis, uv - visMix * F).rgb, texture2D(visB, uv + (1.0 - visMix) * F).rgb, visFade); }
     ${GLSL_FRAME}
     void main(){
       float bt = btOf(codeAt(vUv));
@@ -270,8 +291,12 @@ export const VOLUME = {
     ${GLSL_IR}
     // explicit level 0: these are read inside a loop with early exits, where the GPU can't work out a mip level by itself
     // (on real GPUs that gave a blurred, cloudless frame; software renderers happened to cope)
-    vec3 visAt(vec2 uv){ return mix(textureLod(vis, uv, 0.0).rgb, textureLod(visB, uv, 0.0).rgb, visMix); }
-    float codeAt(vec2 uv){ return mix(textureLod(frameA, uv, 0.0).r, textureLod(frameB, uv, 0.0).r, frameMix); }
+    // (the motion textures have no mip levels, so flowAt's plain lookup is safe here)
+    ${FLOW}
+    vec3 visAt(vec2 uv){ vec2 F = flowAt(visFlow, uv, visFlowMax);
+      return mix(textureLod(vis, uv - visMix * F, 0.0).rgb, textureLod(visB, uv + (1.0 - visMix) * F, 0.0).rgb, visFade); }
+    float codeAt(vec2 uv){ vec2 F = flowAt(frameFlow, uv, frameFlowMax);
+      return mix(textureLod(frameA, uv - frameMix * F, 0.0).r, textureLod(frameB, uv + (1.0 - frameMix) * F, 0.0).r, frameFade); }
     float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
     float noise(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
       return mix(mix(mix(hash(i), hash(i+vec3(1,0,0)), f.x), mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)), f.x), f.y),

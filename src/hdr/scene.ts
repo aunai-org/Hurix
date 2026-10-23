@@ -9,12 +9,10 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME, VOLUME_BLEND } from "./glsl";
 import { dvorak, frameDate, isoMs, subsolar, type Meta, type Storm } from "../meta";
 import { tileWindow, windowRect, windowTiles } from "./tiles";
+import { blendFor, fadeFor } from "./loop";
 import { category } from "../intensity";
 
 export type Mode = 0 | 1 | 2;
-/** How far a loop slot has dissolved into the next frame: held sharp for 75 % of the slot, then a quick fade, so the
- * replay never sits on two pictures laid over each other. */
-export const hold = (f: number) => THREE.MathUtils.smoothstep(f, 0.75, 1);
 
 /** 0 = Visible, 1 = Infra, 2 = Blue. */
 export type Style = 0 | 1 | 2;
@@ -105,7 +103,8 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     live: tex("data/ir_live_mask.png", false),
   };
   // each storm's close-up, loaded the first time it is selected; its loop frames load when a loop is first played
-  type StormTex = { still: THREE.Texture; vis: THREE.Texture | null; loop: Promise<THREE.Texture>[]; visLoop: Promise<THREE.Texture>[] };
+  type StormTex = { still: THREE.Texture; vis: THREE.Texture | null; loop: Promise<THREE.Texture>[]; visLoop: Promise<THREE.Texture>[];
+    motion: Map<string, Promise<THREE.Texture | null>> };
   const stormTex = new Map<string, StormTex>();
   const clamp = <X extends THREE.Texture>(x: X) => { x.wrapS = x.wrapT = THREE.ClampToEdgeWrapping; return x; };
   const texFor = (s: Storm) => {
@@ -114,7 +113,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       t = {
         still: clamp(tex(`${s.dir}storm_ir.png`, false)),
         vis: s.visible ? clamp(tex(`${s.dir}storm_vis.jpg`, true)) : null,
-        loop: [], visLoop: [],
+        loop: [], visLoop: [], motion: new Map(),
       };
       stormTex.set(s.id, t);
     }
@@ -136,16 +135,32 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
   const colourTexture = (url: string) => new Promise<THREE.Texture>((ok, fail) => new THREE.TextureLoader().load(url, (t) => {
     t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso; ok(clamp(t));
   }, undefined, fail));
+  // motion between replay frames (pipeline/flow.py): small RG images, read as they are; null where the file is missing
+  const noMotion = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1); noMotion.needsUpdate = true;
+  const motionTexture = (url: string) => new Promise<THREE.Texture | null>((ok) => new THREE.TextureLoader().load(url, (t) => {
+    t.colorSpace = THREE.NoColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; ok(clamp(t));
+  }, undefined, () => ok(null)));
   const pad = (i: number) => String(i).padStart(2, "0");
+  const none = Promise.resolve(null);
+  const stormMotion = (s: Storm, name: string) => meta.flow ? texFor(s).motion.get(name)
+    ?? texFor(s).motion.set(name, motionTexture(`${base}${s.dir}loop/${name}.png`)).get(name)! : none;
   const loopFrame = (s: Storm, i: number) => (texFor(s).loop[i] ??= redTexture(`${base}${s.dir}loop/f${pad(i)}.jpg`));
   const visFrame = (s: Storm, i: number) => (texFor(s).visLoop[i] ??= colourTexture(`${base}${s.dir}loop/v${pad(i)}.jpg`));
   // the whole globe's hourly infrared frames, oldest first; the frame itself is the full-size ir_global.jpg
   const globeMs = [...(meta.globeTimes ?? []).map(isoMs), FRAME.getTime()];
   const globeTex: Promise<THREE.Texture>[] = [];
+  const globeMotion: Promise<THREE.Texture | null>[] = [];
+  const globeFlow = (i: number) => meta.flow ? (globeMotion[i] ??= motionTexture(`${base}data/globe/m${pad(i)}.png`)) : none;
   const globeFrame = (i: number) => i === globeMs.length - 1 ? Promise.resolve(T.ir) : (globeTex[i] ??= redTexture(`${base}data/globe/g${pad(i)}.jpg`));
   // the prepared loop: infrared frames with their times, and the true-colour frames covering the same span (if any)
   let loopIR: THREE.Texture[] = [], loopMs: number[] = [], loopVis: THREE.Texture[] = [], loopVisMs: number[] = [];
   let loopGlobe: THREE.Texture[] = [], loopGlobeMs: number[] = [];
+  // the motion from each prepared frame to the next (null: hold then fade), and its largest step in UV
+  let flowIR: (THREE.Texture | null)[] = [], flowVis: (THREE.Texture | null)[] = [], flowGlobe: (THREE.Texture | null)[] = [];
+  const maxUv = (px: number | undefined, t: THREE.Texture | undefined) => {
+    const im = t?.image as { width: number; height: number } | undefined;
+    return px && im ? new THREE.Vector2(px / im.width, px / im.height) : new THREE.Vector2();
+  };
   const rmwOf = (s: Storm) => Math.max(15, (s.eyeDiameterKm ?? 30) * 0.65);
 
   // ---------- HD: a 6 x 6-tile window of 2.4 km cloud tiles around where the camera looks, drawn into one atlas ----------
@@ -214,17 +229,26 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     frameA: { value: first.still },
     frameB: { value: first.still },
     frameMix: { value: 1 },
+    frameFade: { value: 1 },
     visMix: { value: 0 },
+    visFade: { value: 0 },
     exag: { value: 14 },
     ir: { value: T.ir as THREE.Texture },
     irB: { value: T.ir as THREE.Texture },
     irMix: { value: 0 },
+    irFade: { value: 0 },
     realSun: { value: 0 },
     rmw: { value: 30 },
     vmax: { value: 100 },
     hd: { value: hdTex as THREE.Texture },
     hdRect: { value: new THREE.Vector4(0, 0, 1, 1) },
     hdOn: { value: 0 },
+    frameFlow: { value: noMotion as THREE.Texture },
+    visFlow: { value: noMotion as THREE.Texture },
+    irFlow: { value: noMotion as THREE.Texture },
+    frameFlowMax: { value: new THREE.Vector2() },
+    visFlowMax: { value: new THREE.Vector2() },
+    irFlowMax: { value: new THREE.Vector2() },
   };
 
   // ---------- stars, Earth, clouds, atmosphere ----------
@@ -348,7 +372,8 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     uni.rmw.value = rmwOf(st);
     uni.vmax.value = dvorak(st.eyeK, st.ringK).kt;
     const t = texFor(st);
-    uni.frameA.value = uni.frameB.value = t.still; uni.frameMix.value = 1;
+    uni.frameA.value = uni.frameB.value = t.still; uni.frameMix.value = uni.frameFade.value = 1;
+    uni.frameFlow.value = uni.visFlow.value = noMotion;
     loopIR = []; loopVis = [];
     uni.vis.value = uni.visB.value = t.vis ?? t.still;
     syncVis();
@@ -499,7 +524,15 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       let g0 = globeMs.length - 1; while (g0 > 0 && globeMs[g0] > ms[0]) g0--;
       const gi = globeMs.map((_, i) => i).slice(g0);
       const globe = gi.length > 1 ? await Promise.all(gi.map(globeFrame)).catch(() => []) : [];
+      // the 12 and 24 h replays step every third 10-minute frame at the end: those pairs have their own motion (nNN)
+      const irM = await Promise.all(frames.slice(0, -1).map((f, k) => stormMotion(st, `${frames[k + 1] === f + 1 ? "m" : "n"}${pad(f)}`)));
+      const visM = vis.length ? await Promise.all(span.slice(0, -1).map(([, i]) => stormMotion(st, `w${pad(i)}`))) : [];
+      const globeM = globe.length ? await Promise.all(gi.slice(0, -1).map(globeFlow)) : [];
       if (st !== storms[cur]) return;
+      flowIR = irM; flowVis = visM; flowGlobe = globeM;
+      uni.frameFlowMax.value = maxUv(meta.flow?.ir, ir[0]);
+      uni.visFlowMax.value = maxUv(meta.flow?.vis, vis[0]);
+      uni.irFlowMax.value = maxUv(meta.flow?.globe, globe[0]);
       loopIR = ir; loopMs = ms; loopVis = vis; loopVisMs = vis.length ? span.map(([t]) => t) : [];
       loopGlobe = globe; loopGlobeMs = globe.length ? gi.map((i) => globeMs[i]) : [];
       syncVis();
@@ -508,13 +541,17 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       const { still, vis } = texFor(storms[cur]), n = loopIR.length;
       if (playing !== (t !== null)) { playing = t !== null; syncVis(); }
       if (t === null || n < 2) {
-        uni.frameA.value = uni.frameB.value = still; uni.frameMix.value = 1;
+        uni.frameA.value = uni.frameB.value = still; uni.frameMix.value = uni.frameFade.value = 1;
         uni.vis.value = uni.visB.value = vis ?? still;
-        uni.ir.value = uni.irB.value = T.ir; uni.irMix.value = 0;
+        uni.ir.value = uni.irB.value = T.ir; uni.irMix.value = uni.irFade.value = 0;
+        uni.frameFlow.value = uni.visFlow.value = uni.irFlow.value = noMotion;
         return;
       }
       const i = Math.floor(t) % n, j = (i + 1) % n, f = t - Math.floor(t);
-      uni.frameA.value = loopIR[i]; uni.frameB.value = loopIR[j]; uni.frameMix.value = j === 0 ? 0 : hold(f);
+      const fl = j === 0 ? null : flowIR[i] ?? null;
+      uni.frameA.value = loopIR[i]; uni.frameB.value = loopIR[j]; uni.frameMix.value = j === 0 ? 0 : blendFor(f, !!fl);
+      uni.frameFade.value = j === 0 ? 0 : fadeFor(f, !!fl);
+      uni.frameFlow.value = fl ?? noMotion;
       const now = loopMs[i] + (j === 0 ? 0 : (loopMs[j] - loopMs[i]) * f);
       // frames further apart than the infrared ones (true colour every 30 minutes, the globe every hour): blend the pair either side
       const pair = (times: number[]) => {
@@ -523,11 +560,13 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       };
       if (loopVis.length > 1) {
         const [k, m] = pair(loopVisMs);
-        uni.vis.value = loopVis[k]; uni.visB.value = loopVis[k + 1]; uni.visMix.value = hold(m);
+        const fl = flowVis[k] ?? null;
+        uni.vis.value = loopVis[k]; uni.visB.value = loopVis[k + 1]; uni.visMix.value = blendFor(m, !!fl); uni.visFade.value = fadeFor(m, !!fl); uni.visFlow.value = fl ?? noMotion;
       }
       if (loopGlobe.length > 1) {
         const [k, m] = pair(loopGlobeMs);
-        uni.ir.value = loopGlobe[k]; uni.irB.value = loopGlobe[k + 1]; uni.irMix.value = hold(m);
+        const fl = flowGlobe[k] ?? null;
+        uni.ir.value = loopGlobe[k]; uni.irB.value = loopGlobe[k + 1]; uni.irMix.value = blendFor(m, !!fl); uni.irFade.value = fadeFor(m, !!fl); uni.irFlow.value = fl ?? noMotion;
       }
     },
     onFrame(fn) { listeners.push(fn); },

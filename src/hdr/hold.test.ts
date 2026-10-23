@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hold } from "./scene";
+import { hold } from "./loop";
 
 describe("hold", () => {
   it("keeps each frame sharp for the first 75 % of its slot", () => {

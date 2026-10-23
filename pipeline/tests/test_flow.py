@@ -36,3 +36,17 @@ def test_interpolate_moves_the_blob_halfway():
     y, x = np.unravel_index(np.argmax(mid), mid.shape)
     assert abs(x - 103) <= 1 and abs(y - 118) <= 1
     assert mid.max() - 20 >= 0.9 * (a.max() - 20.0)
+
+
+def test_replay_pairs_cover_the_30_minute_steps():
+    # 30-minute frames, then 10-minute frames for the last hour (as storms.py writes them)
+    times = ["2026-10-22T19:40Z", "2026-10-22T20:10Z", "2026-10-22T20:40Z", "2026-10-22T20:50Z", "2026-10-22T21:00Z",
+             "2026-10-22T21:10Z", "2026-10-22T21:20Z", "2026-10-22T21:30Z", "2026-10-22T21:40Z"]
+    assert F.replay_pairs(times) == [(0, 1, "m"), (1, 2, "m"), (2, 3, "m"), (3, 4, "m"), (4, 5, "m"), (5, 6, "m"), (6, 7, "m"),
+                                     (7, 8, "m"), (2, 5, "n"), (5, 8, "n")]
+
+
+def test_replay_pairs_skip_a_missing_30_minute_frame():
+    times = ["2026-10-22T20:40Z", "2026-10-22T20:50Z", "2026-10-22T21:00Z", "2026-10-22T21:20Z", "2026-10-22T21:30Z", "2026-10-22T21:40Z"]
+    # 21:10 is missing: 20:40 -> 21:10 can't be made, so its pair goes to the next 30-minute frame the page plays (21:40)
+    assert F.replay_pairs(times)[-1] == (0, 5, "n")
