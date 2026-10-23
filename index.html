@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="theme-color" content="#000000">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.webmanifest">
     <title>Hurrix</title>
     <meta name="description" content="Tropical cyclones on a 3D globe, from live infrared satellite imagery.">
     <link rel="stylesheet" href="/src/style.css">
@@ -13,8 +16,11 @@
     <canvas id="gl" aria-label="3D globe with live infrared satellite imagery and a tropical cyclone"></canvas>
 
     <div class="brand">
-      <b>HURRIX</b>
-      <span><span class="live"><i></i>LIVE IR</span> · Himawari-9 · GOES-18 · GOES-19</span>
+      <svg class="mark" viewBox="8 8 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><circle cx="32" cy="32" r="8.5"/><path d="M40.5 32C40.5 21 31 14.5 18 16.5"/><path d="M23.5 32C23.5 43 33 49.5 46 47.5"/></g><circle cx="32" cy="32" r="3.6" fill="var(--accent)"/></svg>
+      <div>
+        <b>HURRIX</b>
+        <span><span class="live"><i></i>LIVE IR</span> · Himawari-9 · GOES-18 · GOES-19</span>
+      </div>
     </div>
 
     <nav class="drawer-tabs" aria-label="Panels">
@@ -112,7 +118,7 @@
     </div>
 
     <div id="labels" aria-hidden="true"></div>
-    <div id="loading" role="status"><div><span id="loading-msg">Loading the latest satellite frames</span><progress id="prog" max="1" value="0"></progress></div></div>
+    <div id="loading" role="status"><div><svg class="mark spin" viewBox="8 8 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><circle cx="32" cy="32" r="8.5"/><path d="M40.5 32C40.5 21 31 14.5 18 16.5"/><path d="M23.5 32C23.5 43 33 49.5 46 47.5"/></g><circle cx="32" cy="32" r="3.6" fill="var(--accent)"/></svg><b class="wordmark">HURRIX</b><span id="loading-msg">Loading the latest satellite frames</span><progress id="prog" max="1" value="0"></progress></div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
