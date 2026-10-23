@@ -9,8 +9,9 @@ export const GLSL_IR = /* glsl */ `
   float btOf(float code) { return 320.0 - code * 140.0; }
   float cloudOf(float bt) { return pow(smoothstep(290.0, 228.0, bt), 0.8); }
   float topKm(float bt) { return clamp((300.0 - bt) / 6.3, 0.0, 17.5) * smoothstep(286.0, 262.0, bt); }
-  // plain IR: low warm cloud dim grey, high cold tops bright
-  vec3 greyIR(float bt) { return vec3(mix(0.34, 0.8, smoothstep(282.0, 210.0, bt))); }
+  // plain IR: low warm cloud dim grey, high cold tops bright. The ramp runs on down to -88 C (185 K) and steepens at the
+  // cold end, so a storm's central cloud shield (often -65 to -85 C) keeps its spiral bands instead of one flat white.
+  vec3 greyIR(float bt) { return vec3(0.30 + 0.58 * pow(clamp((290.0 - bt) / 105.0, 0.0, 1.0), 1.3)); }
   // forecaster IR: grey down to -30 C, then blue, cyan, green, yellow, orange, red and deep red at the coldest tops
   vec3 infra(float bt) {
     float c = bt - 273.15;
