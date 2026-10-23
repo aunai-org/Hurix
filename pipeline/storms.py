@@ -1,4 +1,6 @@
-"""Find the active tropical cyclones in the stitched IR map, track each one back 48 h, and cut its 2 km close-up and 24 h loop.
+"""Take the storms the warning centres are tracking (advisories.py), track each one back 48 h in the IR, and cut its 2 km
+close-up and 24 h loop. Storms no satellite here sees well are listed without imagery. If no official storm can be
+imaged (the feeds are down, or none is in view), the storms are found in the stitched IR map instead, unnamed.
 
 Each close-up is resampled onto the same tangent-plane grid the 3D views use (2048 km square, centred on the eye, north
 up), from whichever geostationary satellite sees the storm best: Himawari-9, GOES-18 or GOES-19.
@@ -9,6 +11,7 @@ import glob, json, os, sys, shutil, urllib.parse, urllib.request
 import concurrent.futures as cf
 from datetime import datetime, timedelta
 import numpy as np
+import advisories
 import netCDF4 as nc
 from PIL import Image
 from scipy import ndimage
@@ -17,8 +20,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, "frames")
 N, KM = 1024, 2048.0            # close-up: 1024 px at 2 km
 R_KM = 6371.0
-MAX_STORMS = 4
-MIN_SPAN_H = float(os.environ.get("MIN_SPAN_H", 24))  # how long a centre must hold together to count as a storm
+MAX_STORMS = 8
+MIN_SPAN_H = float(os.environ.get("MIN_SPAN_H", 24))  # IR fallback only: how long a centre must hold together to count
 code = lambda bt: np.clip((320 - bt) / 140, 0, 1)
 
 
@@ -289,19 +292,83 @@ def measure(crop):
             round(eye_d) if eye_d else None, round(cdo_r))
 
 
+def dlon(a, b):
+    """b - a in degrees of longitude, the short way round (across the dateline too)."""
+    return (b - a + 180) % 360 - 180
+
+
 def motion(fixes):
     clear = [t for t in fixes if t["eyeClear"]] or fixes
     a, b = clear[max(len(clear) - 8, 0)], clear[-1]
     hrs = max((datetime.strptime(b["t"], "%Y-%m-%dT%H:%MZ") - datetime.strptime(a["t"], "%Y-%m-%dT%H:%MZ")).total_seconds() / 3600, 1)
-    dy = (b["lat"] - a["lat"]) * 60; dx = (b["lon"] - a["lon"]) * 60 * np.cos(np.radians((a["lat"] + b["lat"]) / 2))
+    dy = (b["lat"] - a["lat"]) * 60; dx = dlon(a["lon"], b["lon"]) * 60 * np.cos(np.radians((a["lat"] + b["lat"]) / 2))
     return {"kt": round(float(np.hypot(dx, dy) / hrs), 1), "bearing": round(float((np.degrees(np.arctan2(dx, dy)) + 360) % 360)), "hours": round(hrs)}
+
+
+def seed_fixes(off, fixes, frame):
+    """The IR track, or when the IR can't follow the centre (no deep convection left), the advisory position alone."""
+    return fixes or [{"t": frame.strftime("%Y-%m-%dT%H:%MZ"), "lat": off["lat"], "lon": off["lon"],
+                      "eyeK": 0.0, "ringK": 0.0, "eyeClear": False}]
+
+
+def official_now(off, frame):
+    """The advisory position carried on to the frame time along the last 6 h of the official track (at most 12 h on)."""
+    h = off.get("history") or []
+    if len(h) < 2:
+        return off["lat"], off["lon"]
+    (t1, la1, lo1, _), (t2, la2, lo2, _) = h[-2], h[-1]
+    p = lambda t: datetime.strptime(t, "%Y-%m-%dT%H:%MZ")
+    k = min((frame - p(t2)).total_seconds(), 12 * 3600) / max((p(t2) - p(t1)).total_seconds(), 1)
+    return round(la2 + (la2 - la1) * k, 2), round(dlon(0, lo2 + dlon(lo1, lo2) * k), 2)
+
+
+def trusted(now, fixes):
+    """The IR track only when its newest fix is a clear eye within 60 km of the official position; the centre of the
+    coldest cloud is often well off a storm's real centre, and then the advisory position is the better one."""
+    if not fixes or not fixes[-1]["eyeClear"]:
+        return []
+    la, lo = now; f = fixes[-1]
+    return fixes if np.hypot(f["lat"] - la, dlon(lo, f["lon"]) * np.cos(np.radians(la))) * 111.2 <= 60 else []
+
+
+def storm_motion(fixes, off=None):
+    """Motion from the IR fixes, or from the last 6 h of the official track when the IR gave only the seeded position."""
+    h = (off or {}).get("history") or []
+    if len(fixes) > 1 or len(h) < 2:
+        return motion(fixes)
+    return motion([{"t": t, "lat": la, "lon": lo, "eyeClear": False} for t, la, lo, _ in h[-2:]]) | {"official": True}
+
+
+def choose(officials, sees):
+    """Split official storms into those to image (a satellite here sees them; at most MAX_STORMS) and the rest."""
+    seen = [o for o in officials if sees(o["lat"], o["lon"])]
+    imaged = seen[:MAX_STORMS]
+    return imaged, [o for o in officials if o not in imaged]
+
+
+def sat_for(lat, lon):
+    s = best_sat(lat, lon)
+    return s if view_cos(lat, lon, SATS[s]) >= 0.3 else None  # too close to the edge of every disc (e.g. the Meteosat gap)
+
+
+OFFICIAL_KEYS = ("name", "kind", "agency", "windKt", "pressureMb", "advisory", "history")
 
 
 def main():
     out = sys.argv[1]
     frame = datetime.strptime(os.environ["FRAME"], "%Y-%m-%dT%H:%M")
-    storms = []
-    for la, lo, core in candidates(os.path.join(HERE, "stitched_4096.npz")):
+    imaged, others = choose(advisories.active_storms(), sat_for)
+    for o in imaged:
+        print(f"official {o['id']} {o['name']} {o['lat']} {o['lon']}")
+    storms = [{"sat": sat_for(o["lat"], o["lon"]), "fixes": None, "off": o} for o in imaged]
+    for s in storms:
+        la, lo = official_now(s["off"], frame)
+        try:
+            fixes = trusted((la, lo), track(s["sat"], frame, la, lo))
+        except Exception as e:  # e.g. the centre left the disc; the advisory position still gets its close-up
+            print(f"  {s['off']['id']}: no IR track ({e})"); fixes = []
+        s["fixes"] = seed_fixes({"lat": la, "lon": lo}, fixes, frame)
+    for la, lo, core in ([] if storms else candidates(os.path.join(HERE, "stitched_4096.npz"))):
         sat = best_sat(la, lo)
         print(f"candidate {la:.1f} {lo:.1f} core {core:.2f} via {sat}")
         if view_cos(la, lo, SATS[sat]) < 0.3:  # too close to the edge of every disc (e.g. the Meteosat gap)
@@ -313,17 +380,23 @@ def main():
         if span < MIN_SPAN_H or abs((latest - frame).total_seconds()) > 1200:
             print(f"  dropped: centre held for {span:.0f} h"); continue
         storms.append({"sat": sat, "fixes": fixes})
-    # strongest first (coldest eyewall ring), at most MAX_STORMS
-    storms.sort(key=lambda s: s["fixes"][-1]["ringK"] - (15 if s["fixes"][-1]["eyeClear"] else 0))
-    storms = storms[:MAX_STORMS]
+    # official storms come strongest first; IR ones by the coldest eyewall ring, at most MAX_STORMS
+    if not imaged:
+        storms.sort(key=lambda s: s["fixes"][-1]["ringK"] - (15 if s["fixes"][-1]["eyeClear"] else 0))
+        storms = storms[:MAX_STORMS]
 
     shutil.rmtree(os.path.join(out, "storms"), ignore_errors=True)
     meta_storms = []
-    for i, s in enumerate(storms):
-        sid = f"s{i + 1}"
-        folder = os.path.join(out, "storms", sid); os.makedirs(os.path.join(folder, "loop"))
+    for s in storms:
+        sid = f"s{len(meta_storms) + 1}"
         eye = dict(s["fixes"][-1])
-        crop, _ = closeup_near(s["sat"], frame, eye["lat"], eye["lon"])
+        try:
+            crop, _ = closeup_near(s["sat"], frame, eye["lat"], eye["lon"])
+        except Exception as e:  # one storm that can't be cut never stops the run; an official one is still listed
+            print(f"  no close-up at {eye['lat']} {eye['lon']}: {e}")
+            others += [s["off"]] if s.get("off") else []
+            continue
+        folder = os.path.join(out, "storms", sid); os.makedirs(os.path.join(folder, "loop"))
         if eye["eyeClear"]:  # the track works on a 4 km grid; centre the 2 km close-up on the warmest pixel of the eye
             c = N // 2; sub = ndimage.uniform_filter(np.nan_to_num(crop[c - 10:c + 11, c - 10:c + 11], nan=0.0), 3)
             dy, dx = np.unravel_index(np.argmax(sub), sub.shape)
@@ -345,14 +418,18 @@ def main():
         meta_storms.append({
             "id": sid, "satellite": SAT_NAMES[s["sat"]], "eye": {"lat": eye["lat"], "lon": eye["lon"]},
             "eyeK": round(eye_k, 1), "ringK": round(ring_k, 1), "eyeDiameterKm": eye_d, "cdoRadiusKm": cdo_r,
-            "motion": motion(s["fixes"]), "loopFrames": n, "loopTimes": times,
+            "motion": storm_motion(s["fixes"], s.get("off")), "loopFrames": n, "loopTimes": times,
             "track": [[t["t"], t["lat"], t["lon"], int(t["eyeClear"])] for t in s["fixes"]],
         })
+        if s.get("off"):
+            o = s["off"]
+            meta_storms[-1].update({k: o[k] for k in OFFICIAL_KEYS}, agencyId=o.get("agencyId", o["id"]))
         print(json.dumps({k: v for k, v in meta_storms[-1].items() if k not in ("track", "loopTimes")}))
     if not meta_storms:
         raise SystemExit("no storms found; keeping the previous data")
     path = os.path.join(out, "meta.json")
-    meta = {"frame": frame.strftime("%Y-%m-%dT%H:%MZ"), "storms": meta_storms}
+    meta = {"frame": frame.strftime("%Y-%m-%dT%H:%MZ"), "storms": meta_storms,
+            "others": [{k: o[k] for k in OFFICIAL_KEYS + ("lat", "lon")} | {"agencyId": o.get("agencyId", o["id"])} for o in others]}
     json.dump(meta, open(path, "w"))
 
 

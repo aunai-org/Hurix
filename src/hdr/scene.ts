@@ -8,8 +8,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { ATMOSPHERE, CLOUDS, CLOUD_TOPS, EARTH, IMAGERY, SKY, VOLUME, VOLUME_BLEND } from "./glsl";
 import { dvorak, frameDate, isoMs, subsolar, type Meta, type Storm } from "../meta";
+import { category } from "../intensity";
 
 export type Mode = 0 | 1 | 2;
+/** How far a loop slot has dissolved into the next frame: held sharp for 75 % of the slot, then a quick fade, so the
+ * replay never sits on two pictures laid over each other. */
+export const hold = (f: number) => THREE.MathUtils.smoothstep(f, 0.75, 1);
+
 /** 0 = Visible, 1 = Infra, 2 = Blue. */
 export type Style = 0 | 1 | 2;
 const PATCH_KM = 2048, R_KM = 6371, D2R = Math.PI / 180;
@@ -25,6 +30,8 @@ export interface Globe {
   /** The selected storm's eye, as a unit vector. */
   eye: THREE.Vector3;
   selectStorm(i: number): void;
+  /** Turns the whole globe to a place (a storm listed without imagery). */
+  lookAt(lat: number, lon: number): void;
   setMode(m: Mode): void;
   setStyle(s: Style): void;
   setRealSun(on: boolean): void;
@@ -185,34 +192,47 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
     uniforms: { sunDir: uni.sunDir }, vertexShader: ATMOSPHERE.vertex, fragmentShader: ATMOSPHERE.fragment,
   })));
 
-  // ---------- track: eye fixes as dots, cloud-mass fixes as rings ----------
+  // ---------- paths: official 6-hourly checkpoints coloured by wind; IR fallback: eye fixes as dots, cloud-mass fixes as rings ----------
   const amber = (k: number) => new THREE.Color(1.0, 0.62, 0.25).multiplyScalar(k);
   const trackGroup = new THREE.Group();
   let showTrack = false;
   scene.add(trackGroup);
   const dotGeo = new THREE.SphereGeometry(0.0042, 16, 12), ringGeo = new THREE.TorusGeometry(0.0042, 0.0011, 8, 24);
-  const glow = new THREE.MeshBasicMaterial({ color: amber(4) }), tubeMat = new THREE.MeshBasicMaterial({ color: amber(3.2) });
+  const tubeMat = new THREE.MeshBasicMaterial({ color: 0xc8ccd2, transparent: true, opacity: 0.5, depthWrite: false });
   const pulseMat = new THREE.MeshBasicMaterial({ color: amber(5), transparent: true, side: THREE.DoubleSide, depthWrite: false });
   const pulseGeo = new THREE.RingGeometry(0.01, 0.0125, 64);
   const pulses: THREE.Mesh[] = [];
-  for (const st of storms) {
-    const TR = st.track;
+  // checkpoint colours by official wind; a little over 1 so the bloom lifts them off the imagery
+  const dotMats = new Map<string, THREE.MeshBasicMaterial>();
+  const dotMat = (kt: number | null) => {
+    const c = category(kt);
+    if (!dotMats.has(c.key)) dotMats.set(c.key, new THREE.MeshBasicMaterial({ color: new THREE.Color(c.color).multiplyScalar(1.6) }));
+    return dotMats.get(c.key)!;
+  };
+  /** One storm's path: the warning centre's 6-hourly track coloured by wind, or (IR fallback) the IR fixes, unknown wind. */
+  const addPath = (history: [string, number, number, number | null][] | undefined, TR: Storm["track"]) => {
     // light smoothing of cloud-mass fixes only; eye fixes stay as observed
-    const pts = TR.map((p, i) => {
-      if (p[3]) return [p[1], p[2]];
-      const a = TR[Math.max(i - 1, 0)], b = TR[Math.min(i + 1, TR.length - 1)];
-      return [(a[1] + p[1] * 2 + b[1]) / 4, (a[2] + p[2] * 2 + b[2]) / 4];
-    });
+    const pts: [number, number, number | null, boolean][] = history?.length ? history.map((h) => [h[1], h[2], h[3], true])
+      : TR.map((p, i) => {
+        if (p[3]) return [p[1], p[2], null, true];
+        const a = TR[Math.max(i - 1, 0)], b = TR[Math.min(i + 1, TR.length - 1)];
+        return [(a[1] + p[1] * 2 + b[1]) / 4, (a[2] + p[2] * 2 + b[2]) / 4, null, false];
+      });
     if (pts.length > 1) {
       const curve = new THREE.CatmullRomCurve3(pts.map(([la, lo]) => ll2v(la, lo, 1.012)));
-      trackGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 240, 0.0028, 10), tubeMat));
+      trackGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(64, pts.length * 12), 0.0014, 8), tubeMat));
     }
-    for (const p of TR) {
-      const m = new THREE.Mesh(p[3] ? dotGeo : ringGeo, glow);
-      m.position.copy(ll2v(p[1], p[2], 1.012));
+    pts.forEach(([la, lo, kt, solid], i) => {
+      const m = new THREE.Mesh(solid ? dotGeo : ringGeo, dotMat(kt));
+      m.position.copy(ll2v(la, lo, 1.012));
       m.lookAt(m.position.clone().multiplyScalar(2));
+      if (i === pts.length - 1) m.scale.setScalar(1.6);
       trackGroup.add(m);
-    }
+    });
+  };
+  for (const o of meta.others) addPath(o.history, [[o.history?.at(-1)?.[0] ?? meta.frame, o.lat, o.lon, 1]]);
+  for (const st of storms) {
+    addPath(st.history, st.track);
     const pulse = new THREE.Mesh(pulseGeo, pulseMat);
     pulse.position.copy(ll2v(st.eye.lat, st.eye.lon, 1.013));
     pulse.lookAt(pulse.position.clone().multiplyScalar(2));
@@ -385,6 +405,10 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       const v = viewFor(mode);
       flyTo(v.pos, v.target);
     },
+    lookAt(lat, lon) {
+      const v = viewFor(0);
+      flyTo(ll2v(lat + 4, lon + 4, v.pos.length()), new THREE.Vector3());
+    },
     setMode(m) {
       mode = m; panOff.set(0, 0, 0); controls.enablePan = false;
       resize();
@@ -435,7 +459,7 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
         return;
       }
       const i = Math.floor(t) % n, j = (i + 1) % n, f = t - Math.floor(t);
-      uni.frameA.value = loopIR[i]; uni.frameB.value = loopIR[j]; uni.frameMix.value = j === 0 ? 0 : f;
+      uni.frameA.value = loopIR[i]; uni.frameB.value = loopIR[j]; uni.frameMix.value = j === 0 ? 0 : hold(f);
       const now = loopMs[i] + (j === 0 ? 0 : (loopMs[j] - loopMs[i]) * f);
       // frames further apart than the infrared ones (true colour every 30 minutes, the globe every hour): blend the pair either side
       const pair = (times: number[]) => {
@@ -444,11 +468,11 @@ export function createGlobe(canvas: HTMLCanvasElement, meta: Meta, base: string,
       };
       if (loopVis.length > 1) {
         const [k, m] = pair(loopVisMs);
-        uni.vis.value = loopVis[k]; uni.visB.value = loopVis[k + 1]; uni.visMix.value = m;
+        uni.vis.value = loopVis[k]; uni.visB.value = loopVis[k + 1]; uni.visMix.value = hold(m);
       }
       if (loopGlobe.length > 1) {
         const [k, m] = pair(loopGlobeMs);
-        uni.ir.value = loopGlobe[k]; uni.irB.value = loopGlobe[k + 1]; uni.irMix.value = m;
+        uni.ir.value = loopGlobe[k]; uni.irB.value = loopGlobe[k + 1]; uni.irMix.value = hold(m);
       }
     },
     onFrame(fn) { listeners.push(fn); },

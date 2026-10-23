@@ -159,7 +159,7 @@ def main():
             st["visible"] = True
             print(st["id"], f"visible: {day:.0%} of the close-up in daylight")
         # true colour for the last 6 hours of the loop, every 30 minutes, where the storm was in daylight; the page
-        # cross-fades between them while the infrared loop plays at 10-minute steps underneath
+        # holds each one, then dissolves to the next, while the infrared loop plays at 10-minute steps underneath
         st.pop("visLoop", None); st.pop("visTimes", None)
         vis_times = []
         last = datetime.strptime(st["loopTimes"][-1], "%Y-%m-%dT%H:%MZ") if st.get("loopTimes") else frame
@@ -173,8 +173,7 @@ def main():
                 print("  loop skip", t, e); continue
             if day_t < 0.05:
                 continue
-            Image.fromarray(im).resize((1024, 1024), Image.LANCZOS).save(
-                os.path.join(out, "storms", st["id"], "loop", f"v{len(vis_times):02d}.jpg"), quality=88)
+            Image.fromarray(im).save(os.path.join(out, "storms", st["id"], "loop", f"v{len(vis_times):02d}.jpg"), quality=90)
             vis_times.append(t.strftime("%Y-%m-%dT%H:%MZ"))
         if vis_times:
             st["visTimes"] = vis_times

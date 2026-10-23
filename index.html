@@ -23,7 +23,7 @@
     </nav>
     <div class="drawers">
     <section class="card panel" id="card" aria-label="Selected storm" data-open="false">
-      <div class="seg storm-pick" id="stormpick" role="group" aria-label="Storms" hidden></div>
+      <div class="storm-pick" id="stormpick" role="group" aria-label="Storms" hidden></div>
       <div class="eyebrow" id="card-eyebrow">Tropical cyclone · from satellite only</div>
       <h1 id="card-title">…</h1>
       <p class="peek" id="peek"></p>
@@ -38,8 +38,8 @@
         </dl>
         <div class="sep"></div>
         <dl class="grid more">
-          <dt>Track</dt><dd id="trackinfo">…</dd>
-          <dt>Name</dt><dd><small>Needs the JTWC feed, which isn't wired in yet</small></dd>
+          <dt>IR history</dt><dd id="trackinfo">…</dd>
+          <dt>Source</dt><dd id="source">…</dd>
         </dl>
       </div>
     </section>
@@ -50,8 +50,12 @@
       <div class="ramp" id="ramp"></div>
       <div class="ticks" id="ticks"></div>
       <div class="hint" id="stylehint"></div>
-      <div class="row"><span class="dot"></span>Eye visible in IR</div>
-      <div class="row"><span class="ring"></span>Centre from cloud mass (no clear eye)</div>
+      <div id="pathlegend" hidden>
+        <div class="sep"></div>
+        <div class="eyebrow">Storm path · official wind</div>
+        <div class="swatches" id="swatches"></div>
+        <div class="row"><span class="ring"></span>Unnamed storms: centre from cloud mass (no clear eye)</div>
+      </div>
       <div class="sep"></div>
       <div class="hint" id="modehint"></div>
       <div class="hint" id="sunhint" hidden></div>
@@ -61,31 +65,50 @@
     </div>
 
     <div class="bar panel" role="toolbar" aria-label="View controls">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="0" aria-pressed="true">Imagery</button>
-        <button type="button" data-mode="1" aria-pressed="false">3D cloud tops</button>
-        <button type="button" data-mode="2" aria-pressed="false">3D storm</button>
+      <div class="grp grp-view">
+        <span class="cap" id="cap-view">View</span>
+        <div class="seg" role="group" aria-labelledby="cap-view">
+          <button type="button" data-mode="0" aria-pressed="true" title="The satellite picture of the storm, laid flat on the globe">Satellite</button>
+          <button type="button" data-mode="1" aria-pressed="false" title="The same picture raised by how high each cloud top is">Cloud heights</button>
+          <button type="button" data-mode="2" aria-pressed="false" title="The storm's clouds built as a 3D volume you can turn around">3D storm</button>
+        </div>
       </div>
-      <div class="seg" role="group" aria-label="Imagery style">
-        <button type="button" data-style="0" aria-pressed="true" title="Real true-colour picture from the satellite's visible channels (daylight only); infrared elsewhere">Visible</button>
-        <button type="button" data-style="1" aria-pressed="false" title="Infrared coloured by cloud-top temperature: the colder (higher) the top, the stronger the storm">Infra</button>
-        <button type="button" data-style="2" aria-pressed="false" title="Infrared clouds over a blue sea: cold cores in soft grey, edges bright">Blue</button>
+      <div class="grp grp-colours">
+        <span class="cap" id="cap-colours">Colours</span>
+        <div class="seg" role="group" aria-labelledby="cap-colours">
+          <button type="button" data-style="0" aria-pressed="true" title="The real true-colour picture from the satellite's visible channels (daylight only); infrared elsewhere">True colour</button>
+          <button type="button" data-style="1" aria-pressed="false" title="Infrared coloured by cloud-top temperature: the colder (higher) the top, the stronger the storm">Temperature</button>
+          <button type="button" data-style="2" aria-pressed="false" title="Infrared clouds over a blue sea: cold cores in soft grey, edges bright">Soft blue</button>
+        </div>
       </div>
-      <div class="seg" role="group" aria-label="Lighting">
-        <button type="button" data-light="0" aria-pressed="true">Studio</button>
-        <button type="button" data-light="1" aria-pressed="false">Real sun</button>
+      <div class="grp grp-light">
+        <span class="cap" id="cap-light">Light</span>
+        <div class="seg" role="group" aria-labelledby="cap-light">
+          <button type="button" data-light="0" aria-pressed="true" title="Even light, so every storm is easy to see">Even</button>
+          <button type="button" data-light="1" aria-pressed="false" title="The real sun at the time of the frame: night is dark">Real sun</button>
+        </div>
       </div>
-      <div class="seg" role="group" aria-label="Track">
-        <button type="button" id="track" aria-pressed="false" title="Show or hide the storm tracks and eye markers">Track</button>
+      <div class="grp grp-layers">
+        <span class="cap" id="cap-layers">Layers</span>
+        <div class="seg" role="group" aria-labelledby="cap-layers">
+          <button type="button" id="track" aria-pressed="false" title="Show or hide each storm's path, coloured by its official wind">Paths</button>
+        </div>
       </div>
-      <button type="button" class="icon" id="play" aria-label="Play the last 6 hours" title="Play the loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playicon" d="M7 4.5v15l12-7.5z"></path></svg></button>
-      <div class="seg range" role="group" aria-label="Loop length" id="rangewrap">
-        <button type="button" data-range="6" aria-pressed="true" title="Play the last 6 hours, every 10 minutes">6 h</button>
-        <button type="button" data-range="12" aria-pressed="false" title="Play the last 12 hours, every 30 minutes">12 h</button>
-        <button type="button" data-range="24" aria-pressed="false" title="Play the last 24 hours, every 30 minutes">24 h</button>
+      <label class="grp grp-height" id="exagwrap" for="exag" hidden>
+        <span class="cap">Height ×<span id="exagv">14</span></span>
+        <input id="exag" type="range" min="4" max="40" value="14">
+      </label>
+      <div class="grp grp-replay">
+        <span class="cap">Replay · <span class="time" id="time">…</span></span>
+        <div class="replay">
+          <button type="button" class="icon" id="play" aria-label="Play the last 6 hours" title="Play the loop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playicon" d="M7 4.5v15l12-7.5z"></path></svg></button>
+          <div class="seg range" role="group" aria-label="Loop length" id="rangewrap">
+            <button type="button" data-range="6" aria-pressed="true" title="Play the last 6 hours, every 10 minutes">6 h</button>
+            <button type="button" data-range="12" aria-pressed="false" title="Play the last 12 hours, every 30 minutes">12 h</button>
+            <button type="button" data-range="24" aria-pressed="false" title="Play the last 24 hours, every 30 minutes">24 h</button>
+          </div>
+        </div>
       </div>
-      <div class="time" id="time">…</div>
-      <label class="slider" id="exagwrap" for="exag">Height ×<span id="exagv">14</span><input id="exag" type="range" min="4" max="40" value="14"></label>
     </div>
 
     <div id="labels" aria-hidden="true"></div>
