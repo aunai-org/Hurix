@@ -56,3 +56,18 @@ def test_load_sats_steps_back_one_scan_when_the_latest_is_missing(monkeypatch):
     sats = R.load_sats(".", datetime(2026, 10, 24, 9), 0.1)
     assert [s["name"] for s in sats] == ["meteosat12", "meteosat9"]
     assert ("meteosat9", datetime(2026, 10, 24, 8, 45)) in asked and ("meteosat12", datetime(2026, 10, 24, 8, 50)) in asked
+
+
+def test_globe_to_map_samples_a_griddisc():
+    import globe as G
+    out = G.to_map(M.GridDisc(np.full((180, 360), 255.0, np.float32), -75, 75, -78, 78, 0.0))
+    assert out.shape == G.LAT.shape and np.nanmean(out) == pytest.approx(255.0) and np.isnan(out[0, 0])
+
+
+def test_vis_source_routes_meteosat_storms():
+    import visible as V
+    assert V.vis_source("meteosat12", 10, 15) == ("mtg_fd:rgb_truecolour", "meteosat12", "true")
+    assert V.vis_source("meteosat9", -15, 55)[2] == "true"
+    assert V.vis_source("meteosat9", -15, 80) == ("msg_iodc:rgb_natural", "meteosat9", "natural")
+    assert V.vis_source("meteosat9", -15, 62)[2] == "natural"  # Meteosat-12's picture stops at 70° E, inside this close-up
+    assert V.vis_source("goes19", 20, -60) is None
