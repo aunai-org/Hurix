@@ -3,7 +3,8 @@ close-up and 24 h loop. Storms no satellite here sees well are listed without im
 imaged (the feeds are down, or none is in view), the storms are found in the stitched IR map instead, unnamed.
 
 Each close-up is resampled onto the same tangent-plane grid the 3D views use (2048 km square, centred on the eye, north
-up), from whichever geostationary satellite sees the storm best: Himawari-9, GOES-18 or GOES-19.
+up), from whichever geostationary satellite sees the storm best: Himawari-9, GOES-18, GOES-19, or Meteosat-12 and
+Meteosat-9 from EUMETSAT's map service (meteosat.py) over Europe, Africa and the Indian Ocean.
 
 Usage: FRAME=YYYY-MM-DDTHH:MM python3 storms.py OUT_DIR      (after fetch.sh and reproject.py for that frame)
 """
@@ -12,6 +13,7 @@ import concurrent.futures as cf
 from datetime import datetime, timedelta
 import numpy as np
 import advisories
+import meteosat as M
 import netCDF4 as nc
 from PIL import Image
 from scipy import ndimage
@@ -112,8 +114,9 @@ def download(bucket, key, path):
     return path
 
 
-SATS = {"himawari9": 140.7, "goes18": -137.0, "goes19": -75.2}
-SAT_NAMES = {"himawari9": "Himawari-9", "goes18": "GOES-18", "goes19": "GOES-19"}
+SATS = {"himawari9": 140.7, "goes18": -137.0, "goes19": -75.2} | {s: v["lon0"] for s, v in M.SATS.items()}
+SAT_NAMES = {"himawari9": "Himawari-9", "goes18": "GOES-18", "goes19": "GOES-19"} | {s: v["name"] for s, v in M.SATS.items()}
+STEP = {s: M.SATS[s]["step"] if s in M.SATS else 10 for s in SATS}  # minutes between scans
 
 
 def goes_disc(sat, when):
@@ -187,14 +190,17 @@ HIMA = None
 def closeup(sat, when, lat, lon, n=N):
     """The storm's close-up at one time: BT on the tangent grid, NaN outside the satellite's view."""
     global HIMA
-    disc = (HIMA := HIMA or Himawari()).disc(when, lat, lon) if sat == "himawari9" else goes_disc(sat, when)
+    if sat in M.SATS:
+        disc = M.disc(sat, when, lat, lon, n)
+    else:
+        disc = (HIMA := HIMA or Himawari()).disc(when, lat, lon) if sat == "himawari9" else goes_disc(sat, when)
     la, lo = grid_latlon(lat, lon, n)
     return disc.sample(la, lo)
 
 
 def closeup_near(sat, when, lat, lon, n=N):
-    """A missing slot falls back to its neighbour 10 minutes away."""
-    for dm in (0, -10, 10):
+    """A missing slot falls back to its neighbour 10 minutes away, the earlier one first (the latest may not be out yet)."""
+    for dm in (0, 10, -10):
         try:
             return closeup(sat, when - timedelta(minutes=dm), lat, lon, n), when - timedelta(minutes=dm)
         except (FileNotFoundError, OSError) as e:
@@ -238,10 +244,11 @@ def candidates(stitched):
     return out
 
 
-def loop_times(frame):
-    """The loop's frames, oldest first: every 30 minutes from 24 h back to 6 h back, then every 10 minutes to the frame.
-    The page plays 12 and 24 hours from the 30-minute frames and 6 hours from all of them."""
-    return [frame - timedelta(minutes=30 * k) for k in range(48, 12, -1)] + [frame - timedelta(minutes=10 * k) for k in range(36, -1, -1)]
+def loop_times(frame, step=10):
+    """The loop's frames, oldest first: every 30 minutes from 24 h back to 6 h back, then every step minutes (each scan) to
+    the frame. The page plays 12 and 24 hours from the 30-minute frames and 6 hours from all of them."""
+    n = 360 // step
+    return [frame - timedelta(minutes=30 * k) for k in range(48, 12, -1)] + [frame - timedelta(minutes=step * k) for k in range(n, -1, -1)]
 
 
 def best_sat(lat, lon):
@@ -351,6 +358,11 @@ def choose(officials, sees):
     return imaged, [o for o in officials if o not in imaged]
 
 
+def end_time(sat, frame):
+    """The storm's latest scan: the frame itself, or the last Meteosat scan before it."""
+    return M.slot(sat, frame) if sat in M.SATS else frame
+
+
 def sat_for(lat, lon):
     s = best_sat(lat, lon)
     return s if view_cos(lat, lon, SATS[s]) >= 0.3 else None  # too close to the edge of every disc (e.g. the Meteosat gap)
@@ -369,7 +381,7 @@ def main():
     for s in storms:
         la, lo = official_now(s["off"], frame)
         try:
-            fixes = trusted((la, lo), track(s["sat"], frame, la, lo))
+            fixes = trusted((la, lo), track(s["sat"], end_time(s["sat"], frame), la, lo))
         except Exception as e:  # e.g. the centre left the disc; the advisory position still gets its close-up
             print(f"  {s['off']['id']}: no IR track ({e})"); fixes = []
         s["fixes"] = seed_fixes({"lat": la, "lon": lo}, fixes, frame)
@@ -378,7 +390,7 @@ def main():
         print(f"candidate {la:.1f} {lo:.1f} core {core:.2f} via {sat}")
         if view_cos(la, lo, SATS[sat]) < 0.3:  # too close to the edge of every disc (e.g. the Meteosat gap)
             print("  dropped: no satellite here sees it well enough"); continue
-        fixes = track(sat, frame, la, lo)
+        fixes = track(sat, end_time(sat, frame), la, lo)
         # a storm, not a passing thunderstorm cluster: a centre that holds together for at least a day
         span = (datetime.strptime(fixes[-1]["t"], "%Y-%m-%dT%H:%MZ") - datetime.strptime(fixes[0]["t"], "%Y-%m-%dT%H:%MZ")).total_seconds() / 3600 if fixes else 0
         latest = datetime.strptime(fixes[-1]["t"], "%Y-%m-%dT%H:%MZ") if fixes else None
@@ -395,8 +407,9 @@ def main():
     for s in storms:
         sid = f"s{len(meta_storms) + 1}"
         eye = dict(s["fixes"][-1])
+        end = end_time(s["sat"], frame)
         try:
-            crop, _ = closeup_near(s["sat"], frame, eye["lat"], eye["lon"])
+            crop, _ = closeup_near(s["sat"], end, eye["lat"], eye["lon"])
         except Exception as e:  # one storm that can't be cut never stops the run; an official one is still listed
             print(f"  no close-up at {eye['lat']} {eye['lon']}: {e}")
             others += [s["off"]] if s.get("off") else []
@@ -407,16 +420,24 @@ def main():
             dy, dx = np.unravel_index(np.argmax(sub), sub.shape)
             eye["lat"], eye["lon"] = (round(v, 2) for v in pix_latlon(eye["lat"], eye["lon"], c - 10 + dx, c - 10 + dy))
             s["fixes"][-1].update(lat=eye["lat"], lon=eye["lon"])
-            crop, _ = closeup_near(s["sat"], frame, eye["lat"], eye["lon"])
+            crop, _ = closeup_near(s["sat"], end, eye["lat"], eye["lon"])
         crop = np.nan_to_num(crop, nan=290.0)
         Image.fromarray((code(crop) * 255 + 0.5).astype(np.uint8)).save(os.path.join(folder, "storm_ir.png"), optimize=True)
         eye_k, ring_k, eye_d, cdo_r = measure(crop)
         times, n = [], 0
-        for when in loop_times(frame):  # on the same grid as the close-up
+
+        def loop_frame(when):  # on the same grid as the close-up
             try:
-                im = closeup(s["sat"], when, eye["lat"], eye["lon"])
+                return closeup(s["sat"], when, eye["lat"], eye["lon"])
             except (FileNotFoundError, OSError) as e:
-                print("  loop skip", when, e); continue
+                print("  loop skip", when, e)
+        whens = loop_times(end, STEP[s["sat"]])
+        # the map service answers one picture at a time, so ask it four at once; the S3 satellites go one by one as before
+        with cf.ThreadPoolExecutor(4 if s["sat"] in M.SATS else 1) as ex:
+            frames = list(ex.map(loop_frame, whens))
+        for when, im in zip(whens, frames):
+            if im is None:
+                continue
             Image.fromarray((code(np.nan_to_num(im, nan=290.0)) * 255 + 0.5).astype(np.uint8)) \
                 .save(os.path.join(folder, "loop", f"f{n:02d}.jpg"), quality=92)
             n += 1; times.append(when.strftime("%Y-%m-%dT%H:%MZ"))

@@ -1,6 +1,8 @@
 import pathlib
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
+
+import numpy as np
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
@@ -91,3 +93,30 @@ def test_storm_motion_falls_back_to_the_official_track():
     track = [{"t": "2026-10-22T14:40Z", "lat": 39.0, "lon": -66.0, "eyeClear": True},
              {"t": "2026-10-22T20:40Z", "lat": 40.0, "lon": -65.8, "eyeClear": True}]
     assert "official" not in S.storm_motion(track, o)
+
+
+def test_loop_times_15_minute_step_keeps_the_30_minute_grid():
+    end = datetime(2026, 10, 24, 9, 0)
+    ts = S.loop_times(end, 15)
+    assert ts[-1] == end and ts[-2] == end - timedelta(minutes=15)
+    assert all(round((end - t).total_seconds() / 60) % 30 == 0 for t in ts if end - t > timedelta(hours=6))
+    assert len(ts) == 36 + 25
+
+
+def test_best_sat_picks_meteosat_in_the_gap():
+    assert S.best_sat(-15.0, 60.0) == "meteosat9" and S.best_sat(10.0, 15.0) == "meteosat12"
+    assert S.sat_for(-15.0, 60.0) == "meteosat9"
+
+
+def test_closeup_near_steps_back_one_meteosat_slot(monkeypatch):
+    calls = []
+
+    def fake(sat, when, lat, lon, n=1024):
+        calls.append(when)
+        if len(calls) == 1:
+            raise FileNotFoundError("not published yet")
+        return np.zeros((2, 2))
+    monkeypatch.setattr(S, "closeup", fake)
+    img, got = S.closeup_near("meteosat9", datetime(2026, 10, 24, 9, 0), 0, 60)
+    assert img is not None and got == datetime(2026, 10, 24, 8, 50)
+

@@ -14,8 +14,6 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-import storms as S
-
 URL = "https://view.eumetsat.int/geoserver/ows"
 MAX_PX = 2048  # the service is quick up to 2048 px a side and refuses much more
 
@@ -27,12 +25,14 @@ SATS = {
 }
 
 # the raw 8-bit value of each pixel: a ramp from black at 0 to white at 255
+import storms as S  # noqa: E402  (after SATS: storms reads it while it loads)
+
 # each layer's extent (lat0, lat1, lon0, lon1) from the capabilities: outside it the service paints white
 EXTENT = {"mtg_fd:ir105_hrfi": (-70.0, 70.0, -70.0, 70.0), "mtg_fd:rgb_truecolour": (-70.0, 70.0, -70.0, 70.0),
           "msg_fes:cth": (-77.0, 77.0, -77.0, 77.0), "msg_iodc:ir108": (-77.0, 77.0, -35.5, 118.5),
           "msg_iodc:cth": (-77.0, 77.0, -35.5, 118.5), "msg_iodc:rgb_natural": (-77.0, 77.0, -35.5, 118.5)}
 
-CAL_PATH = os.path.join(S.HERE, "meteosat_cal.json")
+CAL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meteosat_cal.json")
 CAL = json.load(open(CAL_PATH)) if os.path.exists(CAL_PATH) else {}
 
 RAW_SLD = ('<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc">'
