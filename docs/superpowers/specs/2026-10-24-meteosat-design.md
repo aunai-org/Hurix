@@ -18,7 +18,8 @@ This change adds two Meteosat satellites so the whole ring is live:
 - The globe shows live cloud everywhere geostationary satellites see, with no archival band in the middle.
 - The replay, the HD tiles and the 24 h globe replay use Meteosat in that area too.
 - Official storms there get the same close-up, eye fix, path, loop and sliding replay as the others.
-- Meteosat-12 storms also get true colour in daylight.
+- Meteosat-12 storms, and Indian Ocean storms west of about 65° E, also get true colour in daylight.
+- The global cloud-top height map is filled across the middle, from Meteosat's height product.
 
 ## 2. Source and calibration
 
@@ -67,8 +68,17 @@ This change adds two Meteosat satellites so the whole ring is live:
 - **`reproject.py`.** `load_sats` adds the two Meteosats as lat/lon sources. `view()` handles them by sampling the grid and taking `view_cos` for the weight. The blend rule (the best view wins, feathered with the runner-up at the seams) stays as it is.
 - **`globe.py`.** The `COS` stack and `stitch()` gain the two Meteosats, with `near()` using each one's own cadence.
 - **`tiles.py`.** It goes through `R.stitch`, so it gets Meteosat at 2.4 km automatically. The Meteosat part comes from about 16 requests of 2048² per satellite, fetched 4 at a time.
-- **`visible.py`.** Meteosat-12 storms take true colour from `mtg_fd:rgb_truecolour` (already an RGB image, so no calibration). Meteosat-9 has no true-colour layer, so its storms show infrared only, as Himawari storms do at night.
-- **Cloud heights.** Meteosat gets no cloud-top height (as with Himawari). The "Cloud heights" view uses the same fallback it uses for Himawari.
+- **`visible.py`.** True colour comes from `mtg_fd:rgb_truecolour`, which is already an RGB image, so it needs no calibration.
+  - Meteosat-12 storms get it.
+  - So do Meteosat-9 storms that Meteosat-12 still sees at view cosine ≥ 0.3 (the western Indian Ocean, to about 65° E).
+  - Meteosat-9 has no true-colour layer of its own, so storms further east show infrared only, as Himawari storms do at night.
+- **Cloud-top height.** `msg_fes:cth` and `msg_iodc:cth` (every 15 min) only come as a coloured picture, and the colour scale isn't published. Decoding it:
+  - `python3 meteosat.py calibrate` also builds `cth` in `meteosat_cal.json`: a colour → height (km) table. It's made by matching `msg_fes:cth` against GOES-19 ACHA over 55–25° W, taking the median ACHA height per colour bucket (RGB quantised to 4 bits per channel, buckets with fewer than 50 samples dropped).
+  - It also records the colours that mean "no cloud" or "no data".
+  - `meteosat.cth(sat, when, …)` decodes a request with that table.
+  - For Meteosat-12's area, the height comes from `msg_fes:cth`. That's Meteosat-10 or -11 at 0°: the height is a different satellite's product, but the same place and time.
+  - `reproject.py` uses these heights where GOES ACHA has none, so the global height map is filled across the middle.
+  - The calibration check prints the median difference against ACHA, which should come out under about 1 km. If decoding fails, heights there stay NaN as now: the 3D views work out heights from temperature, as they do for Himawari.
 
 **Failure handling.**
 - Meteosat is an extra, so a run never fails because of it.
@@ -90,6 +100,7 @@ This change adds two Meteosat satellites so the whole ring is live:
 **Unit tests (pytest, no network):**
 - `slot()` on both cadences;
 - the calibration table is monotonic and maps known counts to the fitted K;
+- the cloud-top height decoder maps table colours to their heights, and returns NaN for "no cloud" and for unknown colours;
 - `GridDisc.sample` with bilinear sampling, NaN outside, wrap at ±180;
 - request building: lat,lon axis order, the identity style only for Meteosat-12, splitting large requests;
 - `loop_times` at a 15-minute step keeps the 30-minute grid;
@@ -104,7 +115,6 @@ This change adds two Meteosat satellites so the whole ring is live:
 ## 6. Not in this change
 
 - EUMETSAT Data Store (raw files): the later upgrade if the calibrated values ever fall short.
-- Meteosat cloud-top height.
-- Meteosat-9 natural colour.
+- Meteosat-9 natural colour: it's false colour (green land, cyan ice clouds), and it would clash with the true colour everywhere else.
 - Rapid-scan Europe.
 - INSAT-3D and FY-4.
