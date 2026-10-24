@@ -120,3 +120,24 @@ def test_closeup_near_steps_back_one_meteosat_slot(monkeypatch):
     img, got = S.closeup_near("meteosat9", datetime(2026, 10, 24, 9, 0), 0, 60)
     assert img is not None and got == datetime(2026, 10, 24, 8, 50)
 
+
+
+def test_main_survives_a_meteosat_outage(monkeypatch, tmp_path):
+    # EUMETView down: the Meteosat storm is listed without imagery, the GOES storm is cut as usual, the run goes on
+    import json
+    import os
+    import urllib.error
+    import meteosat as M
+    monkeypatch.setattr(S, "CACHE", str(tmp_path / "frames"))
+    monkeypatch.setattr(M, "_open", lambda url, timeout: (_ for _ in ()).throw(urllib.error.URLError("unreachable")))
+    monkeypatch.setattr(M.time, "sleep", lambda s: None)
+    real = S.closeup
+    monkeypatch.setattr(S, "closeup", lambda sat, when, lat, lon, n=S.N: real(sat, when, lat, lon, n) if sat in M.SATS
+                        else np.full((n, n), 250.0, np.float32))
+    officials = [off("IO01", -15.0, 60.0, 80) | {"history": []}, off("AL10", 20.0, -60.0, 50) | {"history": []}]
+    monkeypatch.setattr(S.advisories, "active_storms", lambda: officials)
+    monkeypatch.setenv("FRAME", "2026-10-24T09:00")
+    monkeypatch.setattr(S.sys, "argv", ["storms.py", str(tmp_path)])
+    S.main()
+    meta = json.load(open(os.path.join(tmp_path, "meta.json")))
+    assert [s["agencyId"] for s in meta["storms"]] == ["AL10"] and [o["agencyId"] for o in meta["others"]] == ["IO01"]

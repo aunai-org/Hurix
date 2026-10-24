@@ -390,7 +390,10 @@ def main():
         print(f"candidate {la:.1f} {lo:.1f} core {core:.2f} via {sat}")
         if view_cos(la, lo, SATS[sat]) < 0.3:  # too close to the edge of every disc (e.g. the Meteosat gap)
             print("  dropped: no satellite here sees it well enough"); continue
-        fixes = track(sat, end_time(sat, frame), la, lo)
+        try:
+            fixes = track(sat, end_time(sat, frame), la, lo)
+        except Exception as e:
+            print(f"  dropped: no IR track ({e})"); continue
         # a storm, not a passing thunderstorm cluster: a centre that holds together for at least a day
         span = (datetime.strptime(fixes[-1]["t"], "%Y-%m-%dT%H:%MZ") - datetime.strptime(fixes[0]["t"], "%Y-%m-%dT%H:%MZ")).total_seconds() / 3600 if fixes else 0
         latest = datetime.strptime(fixes[-1]["t"], "%Y-%m-%dT%H:%MZ") if fixes else None
@@ -410,17 +413,23 @@ def main():
         end = end_time(s["sat"], frame)
         try:
             crop, _ = closeup_near(s["sat"], end, eye["lat"], eye["lon"])
+            if crop is None:
+                raise FileNotFoundError(f"no {SAT_NAMES[s['sat']]} picture near {end:%H:%M}")
         except Exception as e:  # one storm that can't be cut never stops the run; an official one is still listed
-            print(f"  no close-up at {eye['lat']} {eye['lon']}: {e}")
+            print(f"  no close-up at {eye['lat']} {eye['lon']}: skipped ({e})")
             others += [s["off"]] if s.get("off") else []
             continue
         folder = os.path.join(out, "storms", sid); os.makedirs(os.path.join(folder, "loop"))
+        first, fix = crop, (eye["lat"], eye["lon"])
         if eye["eyeClear"]:  # the track works on a 4 km grid; centre the 2 km close-up on the warmest pixel of the eye
             c = N // 2; sub = ndimage.uniform_filter(np.nan_to_num(crop[c - 10:c + 11, c - 10:c + 11], nan=0.0), 3)
             dy, dx = np.unravel_index(np.argmax(sub), sub.shape)
             eye["lat"], eye["lon"] = (round(v, 2) for v in pix_latlon(eye["lat"], eye["lon"], c - 10 + dx, c - 10 + dy))
             s["fixes"][-1].update(lat=eye["lat"], lon=eye["lon"])
-            crop, _ = closeup_near(s["sat"], end, eye["lat"], eye["lon"])
+            crop = closeup_near(s["sat"], end, eye["lat"], eye["lon"])[0]
+            if crop is None:  # gone between the two requests: keep the first close-up, centred on the track's fix
+                crop, (eye["lat"], eye["lon"]) = first, fix
+                s["fixes"][-1].update(lat=eye["lat"], lon=eye["lon"])
         crop = np.nan_to_num(crop, nan=290.0)
         Image.fromarray((code(crop) * 255 + 0.5).astype(np.uint8)).save(os.path.join(folder, "storm_ir.png"), optimize=True)
         eye_k, ring_k, eye_d, cdo_r = measure(crop)
@@ -429,8 +438,8 @@ def main():
         def loop_frame(when):  # on the same grid as the close-up
             try:
                 return closeup(s["sat"], when, eye["lat"], eye["lon"])
-            except (FileNotFoundError, OSError) as e:
-                print("  loop skip", when, e)
+            except Exception as e:  # e.g. a scan that isn't out, or the map service gave up
+                print("  loop skipped", when, e)
         whens = loop_times(end, STEP[s["sat"]])
         # the map service answers one picture at a time, so ask it four at once; the S3 satellites go one by one as before
         with cf.ThreadPoolExecutor(4 if s["sat"] in M.SATS else 1) as ex:

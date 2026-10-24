@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadMetaFrom } from "./meta";
-import { satCredit, stormSub, stormTitle } from "./names";
+import { satCredit, stormSub, stormTitle, visSatellite } from "./names";
 
 describe("stormTitle", () => {
   it("puts the kind before the name", () => {
@@ -26,5 +26,12 @@ describe("Meteosat", () => {
   it("loadMeta keeps visKind", () => {
     const m = loadMetaFrom({ frame: "2026-10-24T09:00Z", storms: [{ id: "s1", satellite: "Meteosat-9", visKind: "natural", loopTimes: [] }] });
     expect(m.storms[0].visKind).toBe("natural");
+  });
+});
+
+describe("visSatellite", () => {
+  it("names the satellite the daylight picture comes from", () => {
+    expect(visSatellite({ satellite: "Meteosat-9", visSatellite: "Meteosat-12" })).toBe("Meteosat-12");
+    expect(visSatellite({ satellite: "GOES-19" })).toBe("GOES-19");
   });
 });

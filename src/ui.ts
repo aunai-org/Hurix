@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { dayStr, degC, dvorak, frameDate, hhmm, isoMs, loopIndices, subsolar, topKm, type Meta, type OtherStorm, type Storm } from "./meta";
 import { ll2v, type Globe, type Mode, type Style } from "./hdr/scene";
-import { NATURAL_HINT, satCredit, stormSub, stormTitle } from "./names";
+import { NATURAL_HINT, satCredit, stormSub, stormTitle, visSatellite } from "./names";
 import { CATEGORIES } from "./intensity";
 
 const CITIES: [string, number, number][] = [
@@ -80,7 +80,7 @@ export function bindControls(globe: Globe, meta: Meta) {
     0: { ramp: "linear-gradient(90deg, #3a3f46, #e9ecef)", ticks: ["warm, low", "cold, high"],
       hint: () => !st.visible ? "No daylight picture of this storm in this frame, so it shows infrared in grey."
         : st.visKind === "natural" ? `${NATURAL_HINT}. Elsewhere, and at night, infrared in grey.`
-        : `True colour from ${st.satellite}'s visible channels (1 km) around the storm. Elsewhere, and at night, infrared in grey.` },
+        : `True colour from ${visSatellite(st)}'s visible channels (1 km) around the storm. Elsewhere, and at night, infrared in grey.` },
     1: { ramp: "linear-gradient(90deg, #2a2a2a 0%, #d9d9d9 30%, #1a44f2 38%, #08a6d9 48%, #1bb320 58%, #f2cc0d 67%, #f25a05 76%, #b30d05 85%, #4d0202 100%)",
       ticks: ["+20", "−33", "−43", "−53", "−63", "−73 °C"], hint: () => "Infrared coloured by cloud-top temperature. Red and deep red are the tallest, strongest thunderstorms." },
     2: { ramp: "linear-gradient(90deg, #08184f, #e6edf8 45%, #6b7078)", ticks: ["sea", "low cloud", "cold core"],

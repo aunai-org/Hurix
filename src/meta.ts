@@ -25,6 +25,8 @@ export interface Storm {
   visTimes?: string[];
   /** "natural" when the daylight picture is Meteosat-9's natural colour (a false-colour mix), not true colour. */
   visKind?: "natural";
+  /** The satellite the daylight pictures come from, when it isn't the one above (Meteosat-12 for some Meteosat-9 storms). */
+  visSatellite?: string;
   /** Folder of its close-up and loop, relative to the site root. */
   dir: string;
   /** From the warning centre's advisory; absent when the storm was found in the IR alone. */

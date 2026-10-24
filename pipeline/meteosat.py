@@ -8,7 +8,7 @@ fitted against GOES-19 and Himawari-9 where the discs overlap (python3 meteosat.
 The rest of the pipeline gets a GridDisc: a regular lat/lon raster with the same sample(lat, lon) as storms.Disc.
 """
 import concurrent.futures as cf
-import hashlib, http.client, io, json, math, os, sys, urllib.parse, urllib.request
+import hashlib, http.client, io, json, math, os, sys, time, urllib.parse, urllib.request
 from datetime import datetime, timedelta
 import numpy as np
 from PIL import Image
@@ -72,15 +72,24 @@ def pieces(box, w, h, max_px=MAX_PX):
     return out
 
 
+NO_DATA = (0, 1, 0)  # what image() paints where the service's picture is transparent; not a colour any layer uses
+
+
+def levels(sat, rgb):
+    """The count or grey level of each pixel and where it holds one. Meteosat-12's raw counts read 0 for no data;
+    Meteosat-9's grey draws its warm end (hot land) as (0, 0, 1), which is level 0, and anything else coloured isn't data."""
+    rgb = np.asarray(rgb)
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    if SATS[sat]["raw"]:
+        return r, (r > 0) & (g == r)
+    return r, ((r == g) & (g == b)) | ((r == 0) & (g == 0) & (b == 1))
+
+
 def to_bt(sat, rgb, cal):
     """Brightness temperature (K) from a picture: a count or grey level looked up in the calibration table."""
-    table = np.asarray(cal["ir"][sat], np.float32)
-    rgb = np.asarray(rgb)
-    v = rgb[..., 0]
-    if SATS[sat]["raw"]:
-        return np.where(v > 0, table[v], np.nan).astype(np.float32)
-    grey = (rgb[..., 0] == rgb[..., 1]) & (rgb[..., 1] == rgb[..., 2])  # coastlines and labels are coloured
-    return np.where(grey, table[v], np.nan).astype(np.float32)
+    table = np.asarray([np.nan if v is None else v for v in cal["ir"][sat]], np.float32)
+    v, ok = levels(sat, rgb)
+    return np.where(ok, table[v], np.nan).astype(np.float32)
 
 
 def decode_cth(rgb, cal):
@@ -89,8 +98,10 @@ def decode_cth(rgb, cal):
     for r4, g4, b4, m in cal["cth"]:
         if m is not None:
             lut[(r4 * 16 + g4) * 16 + b4] = m
-    rgb = np.asarray(rgb).astype(np.int32) >> 4
-    return lut[(rgb[..., 0] * 16 + rgb[..., 1]) * 16 + rgb[..., 2]]
+    rgb = np.asarray(rgb).astype(np.int32)
+    q = rgb >> 4
+    h = lut[(q[..., 0] * 16 + q[..., 1]) * 16 + q[..., 2]]
+    return np.where((rgb == NO_DATA).all(-1), np.nan, h).astype(np.float32)
 
 
 def _interp(img, fr, fc):
@@ -141,13 +152,28 @@ def box_for(lat, lon, km):
 
 
 # ---------- the service ----------
+UNREACHABLE_FOR = 45 * 60  # after a request fails twice, the rest of the run (every script) leaves the service alone
+
+
+def _open(url, timeout):
+    return urllib.request.urlopen(url, timeout=timeout).read()
+
+
 def _get(params):
-    for attempt in range(3):
+    """One request, tried twice. If both fail (timeout, refused, cut off), the service counts as unreachable for the rest
+    of the run, so a slow or broken EUMETView costs a couple of minutes, not the hourly run's whole time limit."""
+    mark = os.path.join(S.CACHE, "eumetview", "unreachable")
+    if os.path.exists(mark) and time.time() - os.path.getmtime(mark) < UNREACHABLE_FOR:
+        raise OSError("EUMETView was unreachable earlier in this run")
+    for attempt in range(2):
         try:
-            return urllib.request.urlopen(URL + "?" + urllib.parse.urlencode(params), timeout=60).read()
-        except (OSError, http.client.HTTPException):
-            if attempt == 2:
-                raise
+            return _open(URL + "?" + urllib.parse.urlencode(params), 60)
+        except (OSError, http.client.HTTPException) as e:
+            err = e
+            time.sleep(5)
+    os.makedirs(os.path.dirname(mark), exist_ok=True)
+    open(mark, "w").write(f"{err}\n")
+    raise OSError(f"EUMETView unreachable: {err}")
 
 
 def cache_key(layer, when, box, w, h, raw):
@@ -161,7 +187,7 @@ def _piece(layer, when, box, w, h, raw):
     im = Image.open(io.BytesIO(data))
     rgba = np.asarray(im.convert("RGBA"))
     rgb = rgba[..., :3].copy()
-    rgb[rgba[..., 3] == 0] = (0, 0, 1)  # transparent = no data; a colour no decoder reads as a value
+    rgb[rgba[..., 3] == 0] = NO_DATA
     return rgb
 
 
@@ -284,9 +310,9 @@ def calibrate(date):
         for t in slots:
             rgb = image(SATS[sat]["ir"], t, box, w, h, SATS[sat]["raw"])
             ref_bt = fetch(t)(LAT, LON)
-            grey = (rgb[..., 0] == rgb[..., 1]) & (rgb[..., 1] == rgb[..., 2])
-            ok = both & np.isfinite(ref_bt) & (rgb[..., 0] > 0 if SATS[sat]["raw"] else grey)
-            lv.append(rgb[..., 0][ok]); bt.append(ref_bt[ok])
+            v, has = levels(sat, rgb)
+            ok = both & np.isfinite(ref_bt) & has
+            lv.append(v[ok]); bt.append(ref_bt[ok])
             print(f"  {sat} {t:%H:%M}: {ok.sum()} pixels", flush=True)
         lv, bt = np.concatenate(lv).astype(np.int64), np.concatenate(bt)
         table = fit_table(lv, bt, reverse=not SATS[sat]["raw"])

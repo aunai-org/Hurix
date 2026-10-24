@@ -40,7 +40,7 @@ def test_raw_counts_to_bt_with_table():
 
 def test_grey_to_bt_masks_coloured_pixels():
     cal = {"ir": {"meteosat9": list(np.linspace(299, 203, 256))}}
-    rgb = np.array([[[0, 0, 0], [0, 0, 1], [255, 255, 255]]], np.uint8)
+    rgb = np.array([[[0, 0, 0], [0, 200, 1], [255, 255, 255]]], np.uint8)
     bt = M.to_bt("meteosat9", rgb, cal)
     assert bt[0, 0] == pytest.approx(299) and np.isnan(bt[0, 1]) and bt[0, 2] == pytest.approx(203)
 
@@ -88,3 +88,46 @@ def test_disc_masks_pixels_beyond_the_layer_extent(monkeypatch):
     assert np.isnan(d.sample(np.array(-10.0), np.array(119.5)))
     assert d.sample(np.array(-10.0), np.array(117.0)) == pytest.approx(203)
     assert M.world_box("meteosat12") == (-70.0, 70.0, -70.0, 70.0)
+
+
+def test_get_gives_up_on_the_service_for_the_rest_of_the_run(monkeypatch, tmp_path):
+    import urllib.error
+    monkeypatch.setattr(M.S, "CACHE", str(tmp_path))
+    monkeypatch.setattr(M.time, "sleep", lambda s: None)
+    calls = []
+
+    def unreachable(url, timeout):
+        calls.append(url)
+        raise urllib.error.URLError("timed out")
+    monkeypatch.setattr(M, "_open", unreachable)
+    with pytest.raises(OSError):
+        M._get({"a": "1"})
+    n = len(calls)
+    with pytest.raises(OSError, match="earlier in this run"):
+        M._get({"a": "2"})
+    assert n == 2 and len(calls) == n  # the second request never went out
+
+
+def test_get_turns_a_dropped_reply_into_oserror(monkeypatch, tmp_path):
+    import http.client
+    monkeypatch.setattr(M.S, "CACHE", str(tmp_path))
+    monkeypatch.setattr(M.time, "sleep", lambda s: None)
+    monkeypatch.setattr(M, "_open", lambda url, timeout: (_ for _ in ()).throw(http.client.IncompleteRead(b"")))
+    with pytest.raises(OSError):
+        M._get({"a": "1"})
+
+
+def test_grey_reads_0_0_1_as_the_warm_end():
+    # Meteosat-9's grey draws the warmest pixels (hot land) as (0, 0, 1), not grey
+    cal = {"ir": {"meteosat9": list(np.linspace(299, 203, 256))}}
+    rgb = np.array([[[0, 0, 1], [200, 0, 0]]], np.uint8)
+    bt = M.to_bt("meteosat9", rgb, cal)
+    assert bt[0, 0] == pytest.approx(299) and np.isnan(bt[0, 1])
+
+
+def test_no_data_sentinel_decodes_to_nothing():
+    cal = {"ir": {"meteosat9": list(np.linspace(299, 203, 256)), "meteosat12": [None] + [250.0] * 255},
+           "cth": [[0, 0, 0, 340.0]]}
+    s = np.array([[M.NO_DATA]], np.uint8)
+    assert np.isnan(M.decode_cth(s, cal)[0, 0]) and np.isnan(M.to_bt("meteosat9", s, cal)[0, 0])
+    assert np.isnan(M.to_bt("meteosat12", s, cal)[0, 0])

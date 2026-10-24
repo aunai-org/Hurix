@@ -181,7 +181,7 @@ def main():
             print(st["id"], f"visible: {day:.0%} of the close-up in daylight")
         # true colour for the last 6 hours of the loop, every 30 minutes, where the storm was in daylight; the page
         # holds each one, then dissolves to the next, while the infrared loop plays at 10-minute steps underneath
-        st.pop("visLoop", None); st.pop("visTimes", None); st.pop("visKind", None)
+        st.pop("visLoop", None); st.pop("visTimes", None); st.pop("visKind", None); st.pop("visSatellite", None)
         vis_times = []
         last = datetime.strptime(st["loopTimes"][-1], "%Y-%m-%dT%H:%MZ") if st.get("loopTimes") else frame
         for k in range(12, -1, -1):
@@ -201,6 +201,8 @@ def main():
         src = vis_source(sat, st["eye"]["lat"], st["eye"]["lon"])
         if src and src[2] == "natural" and (vis_times or st.get("visible")):
             st["visKind"] = "natural"
+        if src and src[1] != sat and (vis_times or st.get("visible")):
+            st["visSatellite"] = S.SAT_NAMES[src[1]]
         n = len(vis_times)
         print(st["id"], f"true-colour loop: {n} frames")
     json.dump(meta, open(path, "w"))
