@@ -50,13 +50,13 @@ On a phone the same page fits a portrait screen, with the panels as drawers on t
 NOAA satellite files ──► pipeline/ (Python) ──► public/data/ (images + JSON) ──► the page (three.js)
 ```
 
-- **Data:** infrared and visible pictures from three weather satellites, GOES-19, GOES-18 and Himawari-9, downloaded from [NOAA's open data on AWS](https://registry.opendata.aws/noaa-goes/). No account or key needed. The Earth underneath is NASA's Blue Marble.
+- **Data:** infrared and visible pictures from five weather satellites: GOES-19, GOES-18 and Himawari-9 from [NOAA's open data on AWS](https://registry.opendata.aws/noaa-goes/), and Meteosat-12 and Meteosat-9 over Europe, Africa and the Indian Ocean from EUMETSAT's public map service, [EUMETView](https://view.eumetsat.int) (© EUMETSAT). No account or key needed. The Earth underneath is NASA's Blue Marble.
 - **Storms:** the active storms, their names, official winds and past tracks come from the NHC's [`CurrentStorms.json`](https://www.nhc.noaa.gov/CurrentStorms.json) and best-track files and from the JTWC's [warning feed](https://www.metoc.navy.mil/jtwc/rss/jtwc.rss). A storm both centres warn on is shown once, with the NHC data.
 - **Pipeline:** Python scripts stitch the satellites into one world map, take the official storms the satellites can see (or, if the feeds are down, find storms by their cold cloud cores), and cut a sharp close-up and a 24-hour loop for each, plus an hourly loop of the whole globe.
 - **Page:** a static TypeScript site that draws everything with [three.js](https://threejs.org) and WebGL shaders, built with [Vite](https://vite.dev).
 - **3D:** cloud heights come from cloud-top temperatures (the air cools about 6.3 °C per km), so the 3D shapes are modelled from real measurements.
 
-Hurrix isn't an official forecast. Names and winds come from the latest official advisory; it doesn't show forecasts. Europe, Africa and the Indian Ocean show archive clouds because Meteosat isn't on NOAA's buckets, so storms there are listed and labelled but have no close-up. [Section 11 of the spec](docs/spec.md#11-limits) has the details.
+Hurrix isn't an official forecast. Names and winds come from the latest official advisory; it doesn't show forecasts. Meteosat comes as pictures rather than measurements, so its temperatures are calibrated against GOES-19 and Himawari-9 where they overlap and the coldest tops over the Indian Ocean look a little flat. Only the polar caps beyond about 70° still show archive clouds. [Section 11 of the spec](docs/spec.md#11-limits) has the details.
 
 ## Run it
 

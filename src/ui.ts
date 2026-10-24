@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { dayStr, degC, dvorak, frameDate, hhmm, isoMs, loopIndices, subsolar, topKm, type Meta, type OtherStorm, type Storm } from "./meta";
 import { ll2v, type Globe, type Mode, type Style } from "./hdr/scene";
-import { stormSub, stormTitle } from "./names";
+import { NATURAL_HINT, satCredit, stormSub, stormTitle } from "./names";
 import { CATEGORIES } from "./intensity";
 
 const CITIES: [string, number, number][] = [
@@ -44,7 +44,8 @@ function fillCard(meta: Meta, st: Storm) {
   $("tops").textContent = `${degC(st.ringK)} · ≈ ${topKm(st.ringK).toFixed(0)} km`;
   $("cdo").textContent = `≈ ${st.cdoRadiusKm} km radius below −63 °C`;
   const tr = st.track, span = tr.length > 1 ? Math.round((Date.parse(tr[tr.length - 1][0]) - Date.parse(tr[0][0])) / 36e5) : 0;
-  $("trackinfo").textContent = span ? `${span} h of fixes from ${st.satellite}, every 3 h` : `No eye ${st.satellite} could follow; centred on the advisory`;
+  $("trackinfo").textContent = (span ? `${span} h of fixes from ${st.satellite}, every 3 h` : `No eye ${st.satellite} could follow; centred on the advisory`)
+    + satCredit(st.satellite) + (st.visKind === "natural" ? " · natural colour" : "");
   $("source").textContent = st.agency ? `${st.agency} advisory ${hhmm(new Date(isoMs(st.advisory!)))} · ${st.agencyId ?? st.id}` : "No warning centre advisory matched; found in the IR";
   $("peek").textContent = st.windKt != null ? `${st.windKt} kt (${st.agency}) · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`
     : `${dv ? `≈ ${dv.kt} kt (unofficial)` : "no clear eye"} · ${compass(st.motion.bearing)} at ${Math.round(st.motion.kt)} kt`;
@@ -58,7 +59,7 @@ export function bindControls(globe: Globe, meta: Meta) {
   const storms = meta.storms;
   let st = storms[0], sel = 0;
   const hints = () => [
-    `Infrared at 10.4 µm from three geostationary satellites, stitched at ${hhmm(frame)} ${dayStr(frame)}. Colder tops are higher.`,
+    `Infrared at 10.4 µm from five geostationary satellites, stitched at ${hhmm(frame)} ${dayStr(frame)}. Colder tops are higher.`,
     `The real 2 km ${st.satellite} frame, lifted by the height its temperature implies (≈ 6.3 K per km). Drag to turn around the storm, right-drag (or two fingers) to slide across it, scroll out to spin the globe.`,
     "A 3D cloud built from the same satellite frame: each cloud stands as tall as its top temperature implies. Drag to turn, right-drag (or two fingers) to slide.",
   ];
@@ -77,8 +78,9 @@ export function bindControls(globe: Globe, meta: Meta) {
   // imagery style, with a legend to match
   const RAMPS: Record<Style, { ramp: string; ticks: string[]; hint: () => string }> = {
     0: { ramp: "linear-gradient(90deg, #3a3f46, #e9ecef)", ticks: ["warm, low", "cold, high"],
-      hint: () => st.visible ? `True colour from ${st.satellite}'s visible channels (1 km) around the storm. Elsewhere, and at night, infrared in grey.`
-        : "No daylight picture of this storm in this frame, so it shows infrared in grey." },
+      hint: () => !st.visible ? "No daylight picture of this storm in this frame, so it shows infrared in grey."
+        : st.visKind === "natural" ? `${NATURAL_HINT}. Elsewhere, and at night, infrared in grey.`
+        : `True colour from ${st.satellite}'s visible channels (1 km) around the storm. Elsewhere, and at night, infrared in grey.` },
     1: { ramp: "linear-gradient(90deg, #2a2a2a 0%, #d9d9d9 30%, #1a44f2 38%, #08a6d9 48%, #1bb320 58%, #f2cc0d 67%, #f25a05 76%, #b30d05 85%, #4d0202 100%)",
       ticks: ["+20", "−33", "−43", "−53", "−63", "−73 °C"], hint: () => "Infrared coloured by cloud-top temperature. Red and deep red are the tallest, strongest thunderstorms." },
     2: { ramp: "linear-gradient(90deg, #08184f, #e6edf8 45%, #6b7078)", ticks: ["sea", "low cloud", "cold core"],

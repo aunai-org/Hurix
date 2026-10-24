@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { stormSub, stormTitle } from "./names";
+import { loadMetaFrom } from "./meta";
+import { satCredit, stormSub, stormTitle } from "./names";
 
 describe("stormTitle", () => {
   it("puts the kind before the name", () => {
@@ -15,4 +16,15 @@ describe("stormSub", () => {
     expect(stormSub({ agencyId: "AL10", windKt: null, agency: "NHC" })).toBe("AL10 · NHC");
   });
   it("says when there is no advisory", () => expect(stormSub({})).toBe("from satellite only"));
+});
+
+describe("Meteosat", () => {
+  it("credits EUMETSAT for Meteosat only", () => {
+    expect(satCredit("Meteosat-9")).toBe(" · © EUMETSAT");
+    expect(satCredit("GOES-19")).toBe("");
+  });
+  it("loadMeta keeps visKind", () => {
+    const m = loadMetaFrom({ frame: "2026-10-24T09:00Z", storms: [{ id: "s1", satellite: "Meteosat-9", visKind: "natural", loopTimes: [] }] });
+    expect(m.storms[0].visKind).toBe("natural");
+  });
 });
