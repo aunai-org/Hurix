@@ -62,3 +62,29 @@ def test_griddisc_bilinear_inside_nan_outside():
 def test_griddisc_masks_off_disc():
     d = M.GridDisc(np.full((10, 10), 250.0, np.float32), -80, 80, 60, 179, 0.0)
     assert np.isnan(d.sample(np.array(0.0), np.array(100.0)))  # beyond the 0° disc
+
+
+def test_cache_key_depends_on_every_request_field():
+    t = datetime(2026, 10, 24, 9)
+    k = M.cache_key("l", t, (0, 1, 2, 3), 10, 20, True)
+    others = [M.cache_key("m", t, (0, 1, 2, 3), 10, 20, True), M.cache_key("l", datetime(2026, 10, 24, 9, 10), (0, 1, 2, 3), 10, 20, True),
+              M.cache_key("l", t, (0, 1, 2, 4), 10, 20, True), M.cache_key("l", t, (0, 1, 2, 3), 11, 20, True),
+              M.cache_key("l", t, (0, 1, 2, 3), 10, 20, False)]
+    assert k not in others and len(set(others)) == 5
+
+
+def test_image_raises_not_found_on_service_exception(monkeypatch, tmp_path):
+    monkeypatch.setattr(M.S, "CACHE", str(tmp_path))
+    monkeypatch.setattr(M, "_get", lambda params: b'<?xml version="1.0"?><ServiceExceptionReport/>')
+    with pytest.raises(FileNotFoundError):
+        M.image("mtg_fd:ir105_hrfi", datetime(2026, 10, 24, 9), (0, 1, 0, 1), 4, 4, True)
+
+
+def test_disc_masks_pixels_beyond_the_layer_extent(monkeypatch):
+    # the service paints everything outside a layer's extent white, which Meteosat-9's grey would read as a cold cloud top
+    monkeypatch.setattr(M, "CAL", {"ir": {"meteosat9": list(np.linspace(299, 203, 256))}})
+    monkeypatch.setattr(M, "image", lambda layer, when, box, w, h, raw=False: np.full((h, w, 3), 255, np.uint8))
+    d = M.disc("meteosat9", datetime(2026, 10, 24, 9), -10.0, 117.0, n=64, km=1000.0)
+    assert np.isnan(d.sample(np.array(-10.0), np.array(119.5)))
+    assert d.sample(np.array(-10.0), np.array(117.0)) == pytest.approx(203)
+    assert M.world_box("meteosat12") == (-70.0, 70.0, -70.0, 70.0)
