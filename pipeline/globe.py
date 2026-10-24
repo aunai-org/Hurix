@@ -1,6 +1,8 @@
 """The whole-globe infrared loop: the stitched IR map once an hour over the last 24 hours, at 2048 x 1024, so the clouds
 move everywhere while the page plays, not only in the storm close-up. Written as globe/gNN.jpg (oldest first, the same
 code as ir_global.jpg); meta.json lists their times in globeTimes. The page plays the frame itself from ir_global.jpg.
+GOES-19, GOES-18 and Himawari-9 come from NOAA's buckets, Meteosat-12 and Meteosat-9 from EUMETSAT's map service; an
+hour without a Meteosat picture keeps archival clouds in its part of the gap instead of being dropped.
 
 Usage: FRAME=YYYY-MM-DDTHH:MM python3 globe.py OUT_DIR      (after export.py and storms.py)
 """
@@ -12,6 +14,7 @@ import netCDF4 as nc
 from PIL import Image
 from scipy import ndimage
 
+import meteosat as M
 import storms as S
 
 W, H = 2048, 1024
@@ -31,6 +34,8 @@ def block_mean(img):
 
 def to_map(disc):
     """One satellite image (block-averaged) resampled onto the map; NaN where it can't see."""
+    if isinstance(disc, M.GridDisc):  # a Meteosat picture already comes at the map's pixel size
+        return disc.sample(LAT, LON)
     small = S.Disc(block_mean(disc.img), disc.x0 + disc.dx * (BLOCK - 1) / 2, disc.dx * BLOCK,
                    disc.y0 + disc.dy * (BLOCK - 1) / 2, disc.dy * BLOCK, disc.p)
     return small.sample(LAT, LON)
@@ -72,9 +77,10 @@ def himawari(when):
     return S.Disc(img, h.x0, h.dx, h.y0, h.dy, h.p)
 
 
-def near(fetch, when):
-    """A missing slot falls back to its neighbour 10 minutes away (Himawari skips 02:40 and 14:40 every day)."""
-    for dm in (0, -10, 10):
+def near(fetch, when, step=10):
+    """A missing slot falls back to its neighbour one scan away, the earlier one first (Himawari skips 02:40 and 14:40
+    every day; the newest Meteosat scan may not be out yet)."""
+    for dm in (0, step, -step):
         try:
             return to_map(fetch(when - timedelta(minutes=dm)))
         except (FileNotFoundError, OSError) as e:
@@ -83,7 +89,7 @@ def near(fetch, when):
 
 
 # the satellite with the best view wins, blended with the runner-up near the seams (as reproject.py does)
-COS = np.stack([S.view_cos(LAT, LON, S.SATS[s]) for s in ("goes19", "goes18", "himawari9")])
+COS = np.stack([S.view_cos(LAT, LON, S.SATS[s]) for s in ("goes19", "goes18", "himawari9", "meteosat12", "meteosat9")])
 
 
 FRAME = datetime.strptime(os.environ.get("FRAME", "2000-01-01T00:00"), "%Y-%m-%dT%H:%M")
@@ -93,9 +99,15 @@ def stitch(h):
     """The stitched brightness temperature h hours before the frame (each in its own process: netCDF isn't thread-safe)."""
     when = FRAME - timedelta(hours=h)
     try:
-        bts = np.stack([near(lambda t: goes("goes19", t), when), near(lambda t: goes("goes18", t), when), near(himawari, when)])
+        bts = [near(lambda t: goes("goes19", t), when), near(lambda t: goes("goes18", t), when), near(himawari, when)]
     except (FileNotFoundError, OSError) as e:
         print("  globe skip", when, e); return when, None
+    for sat in ("meteosat12", "meteosat9"):
+        try:
+            bts.append(near(lambda t: M.world(sat, t, 360 / W), M.slot(sat, when), M.SATS[sat]["step"]))
+        except Exception as e:  # the map service failed: archival clouds in that part of the gap, as before
+            print(f"  {sat}: skipped ({when}: {e})"); bts.append(np.full(LAT.shape, np.nan, np.float32))
+    bts = np.stack(bts)
     cos = np.where(np.isfinite(bts), COS, -1)
     order = np.argsort(-cos, axis=0)
     take = lambda arr, idx: np.take_along_axis(arr, idx[None], 0)[0]
