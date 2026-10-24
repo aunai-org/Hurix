@@ -7,6 +7,10 @@ it out where the sun was low or down at the frame time and shows infrared there 
 Himawari-9 has real blue, green and red bands (1, 2, 3). GOES has blue and red (1, 2) plus a near-infrared "veggie" band
 (3); its green is synthesised from the three the way CIMSS does it.
 
+Meteosat storms take EUMETSAT's own rendered pictures from its map service (meteosat.py), as they come: Meteosat-12's
+true colour, also for Meteosat-9 storms it sees well (west of about 65° E), and Meteosat-9's natural colour further east,
+a false-colour mix (land green, ice clouds cyan) that meta.json marks with "visKind": "natural".
+
 It also cuts true-colour loop frames (1024 px, loop/vNN.jpg) every 30 minutes over the last 6 hours, where it was daylight;\nmeta.json lists their times in visTimes.
 
 Usage: FRAME=YYYY-MM-DDTHH:MM python3 visible.py OUT_DIR      (after storms.py has written OUT_DIR/meta.json)
@@ -19,6 +23,7 @@ import netCDF4 as nc
 from PIL import Image
 from scipy import ndimage
 
+import meteosat as M
 import storms as S
 
 NV, KMV = 2048, 2048.0  # 1 km pixels over the same 2048 km square as the infrared close-up
@@ -120,8 +125,24 @@ def daylit(when, lat, lon):
     return float(np.mean(cos_sza(la, lo, when) > 0.1))
 
 
+def vis_source(sat, lat, lon):
+    """Where a Meteosat storm's colour picture comes from: (layer, satellite whose scan times it follows, kind), or None
+    for the GOES and Himawari storms, which are built from their own bands."""
+    if sat not in M.SATS:
+        return None
+    lon1 = M.box_for(lat, lon, KMV)[3]  # Meteosat-12's true colour stops at 70° E: the whole close-up must fit
+    if sat == "meteosat12" or (S.view_cos(lat, lon, M.SATS["meteosat12"]["lon0"]) >= 0.3 and lon1 <= M.EXTENT[M.SATS["meteosat12"]["true"]][3]):
+        return M.SATS["meteosat12"]["true"], "meteosat12", "true"
+    return M.SATS["meteosat9"]["natural"], "meteosat9", "natural"
+
+
 def true_colour(sat, when, lat, lon):
     la, lo = S.grid_latlon(lat, lon, NV, KMV)
+    src = vis_source(sat, lat, lon)
+    if src:  # already rendered by EUMETSAT: no sun or haze correction
+        layer, csat, _ = src
+        rgb = M.rgb_disc(layer, csat, M.slot(csat, when), lat, lon, KMV, KMV / NV).sample(la, lo)
+        return rgb, float(np.mean(cos_sza(la, lo, when) > 0.1))
     if sat == "himawari9":
         b, g, r = (sample(hima_band(k, when, lat, lon), la, lo) for k in (1, 2, 3))
     else:
@@ -160,7 +181,7 @@ def main():
             print(st["id"], f"visible: {day:.0%} of the close-up in daylight")
         # true colour for the last 6 hours of the loop, every 30 minutes, where the storm was in daylight; the page
         # holds each one, then dissolves to the next, while the infrared loop plays at 10-minute steps underneath
-        st.pop("visLoop", None); st.pop("visTimes", None)
+        st.pop("visLoop", None); st.pop("visTimes", None); st.pop("visKind", None); st.pop("visSatellite", None)
         vis_times = []
         last = datetime.strptime(st["loopTimes"][-1], "%Y-%m-%dT%H:%MZ") if st.get("loopTimes") else frame
         for k in range(12, -1, -1):
@@ -177,6 +198,11 @@ def main():
             vis_times.append(t.strftime("%Y-%m-%dT%H:%MZ"))
         if vis_times:
             st["visTimes"] = vis_times
+        src = vis_source(sat, st["eye"]["lat"], st["eye"]["lon"])
+        if src and src[2] == "natural" and (vis_times or st.get("visible")):
+            st["visKind"] = "natural"
+        if src and src[1] != sat and (vis_times or st.get("visible")):
+            st["visSatellite"] = S.SAT_NAMES[src[1]]
         n = len(vis_times)
         print(st["id"], f"true-colour loop: {n} frames")
     json.dump(meta, open(path, "w"))

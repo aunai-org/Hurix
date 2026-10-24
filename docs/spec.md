@@ -38,20 +38,22 @@ Nothing on the globe is drawn by hand. Every cloud is a pixel a satellite measur
 
 ## 2. Where the data comes from
 
-Hurrix only uses open data you can download without an account or API key. All satellite files come from NOAA's public buckets on Amazon Web Services (AWS), as part of the NOAA Open Data Dissemination programme.
+Hurrix only uses open data you can download without an account or API key. The GOES and Himawari files come from NOAA's public buckets on Amazon Web Services (AWS), as part of the NOAA Open Data Dissemination programme. The two Meteosats come from EUMETSAT's public map service.
 
 | | Source | What Hurrix takes from it | Link |
 | --- | --- | --- | --- |
 | 🛰️ | **GOES-19** (GOES-East, NOAA), parked above 75.2° W. Sees the Americas and the Atlantic. | Infrared band 13 (`ABI-L2-CMIPF`, C13), cloud-top height (`ABI-L2-ACHAF`), visible bands 1–3 (C01–C03) | [noaa-goes19 bucket](https://noaa-goes19.s3.amazonaws.com/index.html) · [registry entry](https://registry.opendata.aws/noaa-goes/) |
 | 🛰️ | **GOES-18** (GOES-West, NOAA), parked above 137° W. Sees the Eastern and Central Pacific. | The same products as GOES-19 | [noaa-goes18 bucket](https://noaa-goes18.s3.amazonaws.com/index.html) · [registry entry](https://registry.opendata.aws/noaa-goes/) |
 | 🛰️ | **Himawari-9** (Japan Meteorological Agency, mirrored by NOAA), parked above 140.7° E. Sees Asia, Australia and the Western Pacific. | Infrared band 13 and visible bands 1–3, as `AHI-L2-FLDK-ISatSS` tiles | [noaa-himawari9 bucket](https://noaa-himawari9.s3.amazonaws.com/index.html) · [registry entry](https://registry.opendata.aws/noaa-himawari/) |
+| 🛰️ | **Meteosat-12** (MTG-I1, EUMETSAT), parked above 0°. Sees Europe, Africa and the Atlantic. | Infrared at 10.5 µm (`mtg_fd:ir105_hrfi`, every 10 min, as raw 8-bit counts), true colour (`mtg_fd:rgb_truecolour`); cloud-top height from Meteosat-10 (`msg_fes:cth`, every 15 min) | [EUMETView](https://view.eumetsat.int) · WMS `https://view.eumetsat.int/geoserver/ows` |
+| 🛰️ | **Meteosat-9** (EUMETSAT, Indian Ocean service), parked above 45.5° E. Sees the Indian Ocean, the Middle East and India. | Infrared at 10.8 µm (`msg_iodc:ir108`, every 15 min, as grey), cloud-top height (`msg_iodc:cth`), natural colour (`msg_iodc:rgb_natural`) | [EUMETView](https://view.eumetsat.int) |
 | 🌍 | **NASA Blue Marble and Black Marble**, as packaged in the three-globe examples (MIT). | Daytime Earth, city lights at night, land/water mask, terrain bumps | [three-globe](https://github.com/vasturiano/three-globe) · [NASA Visible Earth](https://visibleearth.nasa.gov/collection/1484/blue-marble) |
-| ☁️ | **three-globe's example cloud map** (MIT). | Archive clouds for the area no satellite here covers | [three-globe on npm](https://www.npmjs.com/package/three-globe) |
+| ☁️ | **three-globe's example cloud map** (MIT). | Archive clouds for the polar caps no satellite here covers | [three-globe on npm](https://www.npmjs.com/package/three-globe) |
 | 🔤 | **IBM Plex Mono** (SIL Open Font Licence). | The typeface | [@fontsource/ibm-plex-mono](https://fontsource.org/fonts/ibm-plex-mono) |
 
-The three satellites are *geostationary*: each hangs over one spot on the equator, 35,786 km up, and photographs its whole visible half of the Earth (a *full disk*) every 10 minutes. Together they cover the Americas, the Pacific, East Asia and Australia.
+The five satellites are *geostationary*: each hangs over one spot on the equator, 35,786 km up, and photographs its whole visible half of the Earth (a *full disk*) every 10 or 15 minutes. Together they go all the way round, up to about 70° north and south.
 
-Europe, Africa and the Indian Ocean are covered by the European Meteosat satellites, which aren't on NOAA's open buckets. Hurrix fills that area with archive clouds and says so in the legend.
+EUMETSAT's map service hands out pictures, not measurements, so `pipeline/meteosat.py` turns them back into numbers. Meteosat-12's infrared is asked for as raw 8-bit counts, Meteosat-9's comes as its own grey, and both are matched to kelvin against GOES-19 and Himawari-9 where the discs overlap (`meteosat_cal.json`, from `python3 meteosat.py calibrate DATE`; about 2.6 K and 3.1 K median difference). The cloud-top height picture's colours are matched to GOES-19's measured heights the same way (under 1 km). Each run prints the bias against the neighbour and warns over 5 K, which would mean EUMETSAT changed its colours. Imagery © EUMETSAT.
 
 Storm names, official winds and past tracks come from the two warning centres, also without an account:
 
@@ -120,7 +122,7 @@ Turns the stitched map into the images the page loads:
 
 **Which storms.** `advisories.py` reads the active storms from the NHC and the JTWC (see [section 2](#2-where-the-data-comes-from)): name, kind (tropical storm, typhoon, hurricane…), official wind, pressure, position, advisory time and past track. A storm both centres warn on is kept once, from the NHC. A feed that's down is skipped and the run carries on.
 
-1. **Who gets a close-up.** Each official storm gets the satellite with the most direct view. Up to eight of them, strongest first, get a close-up and a loop. Storms no satellite here sees well (the Meteosat gap) go into `others`: they're listed and labelled on the globe, with their path, but have no imagery.
+1. **Who gets a close-up.** Each official storm gets the satellite with the most direct view. Up to eight of them, strongest first, get a close-up and a loop. Storms no satellite here sees well (too near the edge of every disc) go into `others`: they're listed and labelled on the globe, with their path, but have no imagery.
 2. **Where the centre is now.** The advisory is up to a few hours older than the frame, so the advisory position is carried forward along the official track to the frame time (at most 12 hours).
 3. **Track back in the infrared**, to measure the storm and its motion. Step back in time every 3 hours, up to 48 hours. At each step, look near where the storm should be (extrapolated from the last two fixes) and find the centre:
    - An **eye** is a warm spot closed off by cold cloud on all sides. For each point, the code takes the coldest top in each of 8 directions 10–30 km out, then the warmest of those eight. If the point is much warmer than that ring, it's an eye.
@@ -147,7 +149,7 @@ Where the sun was down, there's no visible picture, so the page shows infrared t
 
 ### 4.6 The whole-globe loop (`globe.py`)
 
-So that every cloud on the globe moves while the loop plays, not only the storm, this step stitches the whole world once an hour over the last 24 hours. It downloads the three satellites' full disks for each hour (Himawari's 88 tiles included), averages each satellite's 2 km pixels into 8 km blocks, and maps them onto a 2048 × 1024 world map the same way `reproject.py` does, with the same archive clouds in the Meteosat gap. The frames are written as `globe/g00.jpg` onward, and their times go into `meta.json` as `globeTimes`. The hours are stitched three at a time, in separate processes, and take a few minutes in all.
+So that every cloud on the globe moves while the loop plays, not only the storm, this step stitches the whole world once an hour over the last 24 hours. It downloads the three satellites' full disks for each hour (Himawari's 88 tiles included), averages each satellite's 2 km pixels into 8 km blocks, and maps them onto a 2048 × 1024 world map the same way `reproject.py` does, with the same archive clouds over the polar caps. The Meteosats come from the map service at the map's own size, one scan earlier if the newest isn't out yet; an hour without one keeps archive clouds there instead of being dropped. The frames are written as `globe/g00.jpg` onward, and their times go into `meta.json` as `globeTimes`. The hours are stitched three at a time, in separate processes, and take a few minutes in all.
 
 ### 4.7 HD tiles (`tiles.py`)
 
@@ -333,13 +335,13 @@ Hurrix is honest about what it doesn't know, so nobody mistakes it for an offici
 - **Official wind, unofficial estimate.** The Storm card shows the official wind from the latest advisory. Next to it, and alone for a storm found by the fallback, is a simplified Dvorak-style estimate: the colder the eyewall (and the warmer the eye), the stronger the storm. It ranges from about 65 to 155 knots, and it's labelled unofficial.
 - **No forecasts.** Only the latest advisory and the past track are shown, not the forecast track or cone.
 - **Weak storms can be missed when the feeds are down.** The fallback uses the pictures alone, so a weak or disorganised storm without a solid cold core may not count.
-- **A gap over Europe, Africa and the Indian Ocean**, which needs Meteosat. That area shows archive clouds, and storms there are listed without a close-up.
+- **Meteosat is calibrated pictures, not measurements.** Its temperatures are matched to GOES-19 and Himawari-9, about 3 K apart on a typical pixel. Tops colder than about 205 K over the Indian Ocean (195 K under Meteosat-12) look flatter than they are. East of about 65° E the daylight picture is Meteosat-9's natural colour, a false-colour mix, and the page says so.
 - **One moment in time.** The page shows the frame the pipeline last ran on, not a live stream.
 - **The 3D shapes are modelled** from cloud-top temperatures ([section 8](#8-the-3d-views)).
 
 ## 12. Ideas for extending it
 
-- **Add Meteosat** (EUMETSAT) to close the gap over Europe, Africa and the Indian Ocean. `reproject.py` would need its projection, and `storms.py` a `SATS` entry.
+- **Meteosat raw data** from the EUMETSAT Data Store (free account) instead of the map service, for full-range temperatures over the Indian Ocean.
 - **Add forecast tracks** from the same NHC and JTWC files.
 - **Run the pipeline on a schedule** (for example every 30 minutes) and publish `public/data` with the site, so the globe stays current.
 - **More loop history**, using the same close-up grid.

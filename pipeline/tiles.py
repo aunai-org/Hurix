@@ -8,6 +8,7 @@ Usage: python3 tiles.py OUT_DIR      (after storms.py has written OUT_DIR/meta.j
 """
 import json, os, shutil, sys
 import concurrent.futures as cf
+from datetime import datetime
 import numpy as np
 from PIL import Image
 
@@ -38,7 +39,8 @@ def main(out_dir):
     shutil.rmtree(os.path.join(out_dir, "tiles"), ignore_errors=True)  # earlier frames' tiles
     folder = os.path.join(out_dir, sub)
     os.makedirs(folder)
-    sats = R.load_sats(HERE)
+    frame = datetime.strptime(meta["frame"], "%Y-%m-%dT%H:%MZ") if meta else None
+    sats = R.load_sats(HERE, frame, 360 / (COLS * SIZE))
     arch_img = Image.open(os.path.join(HERE, "cache", "clouds.png")).convert("RGBA").getchannel("A")
     aw, ah = arch_img.size
     W = COLS * SIZE

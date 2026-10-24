@@ -165,3 +165,12 @@ Source: NOAA Open Data Dissemination on AWS (GOES-18, GOES-19, Himawari-9) · Li
 
 Satellite imagery from NOAA's GOES-R series and from JMA's Himawari-9, redistributed by NOAA.
 This credit is given as a courtesy.
+
+========================================================================
+EUMETSAT imagery (public/data)
+Source: EUMETSAT EUMETView (Meteosat-12, Meteosat-9) · © EUMETSAT
+========================================================================
+
+Infrared, cloud-top height, true-colour and natural-colour pictures from Meteosat-12 (0°) and Meteosat-9 (45.5° E),
+taken from EUMETSAT's public map service (https://view.eumetsat.int) and converted into the images in public/data.
+© EUMETSAT, credited wherever the imagery shows, as EUMETSAT's terms require.

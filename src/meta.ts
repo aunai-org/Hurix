@@ -23,6 +23,10 @@ export interface Storm {
   visible?: boolean;
   /** Times of the true-colour loop frames (loop/vNN.jpg): every 30 minutes over the last 6 hours, daylight only. */
   visTimes?: string[];
+  /** "natural" when the daylight picture is Meteosat-9's natural colour (a false-colour mix), not true colour. */
+  visKind?: "natural";
+  /** The satellite the daylight pictures come from, when it isn't the one above (Meteosat-12 for some Meteosat-9 storms). */
+  visSatellite?: string;
   /** Folder of its close-up and loop, relative to the site root. */
   dir: string;
   /** From the warning centre's advisory; absent when the storm was found in the IR alone. */
@@ -40,7 +44,7 @@ export interface Storm {
   history?: [string, number, number, number | null][];
 }
 
-/** A storm with a current warning that no satellite in this feed sees well (e.g. the Indian Ocean): listed, not imaged. */
+/** A storm with a current warning that no satellite in this feed sees well (too near the edge of every disc): listed, not imaged. */
 export interface OtherStorm {
   name: string;
   kind: string;
@@ -70,7 +74,10 @@ export interface Meta {
 export async function loadMeta(base: string): Promise<Meta> {
   const res = await fetch(`${base}data/meta.json`);
   if (!res.ok) throw new Error(`data/meta.json: HTTP ${res.status}`);
-  const raw = await res.json();
+  return loadMetaFrom(await res.json());
+}
+
+export function loadMetaFrom(raw: any): Meta {
   // the first pipeline wrote one storm at the top level, with its files directly in data/
   if (!raw.storms) return { frame: raw.frame, others: [], storms: [{ ...raw, id: "s1", satellite: "Himawari-9", dir: "data/" }] };
   return { frame: raw.frame, globeTimes: raw.globeTimes, tiles: raw.tiles, flow: raw.flow, others: raw.others ?? [], storms: (raw.storms as Omit<Storm, "dir">[]).map((s) => ({ ...s, dir: `data/storms/${s.id}/` })) };
