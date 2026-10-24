@@ -15,7 +15,7 @@ fi
 case $F in *T02:40|*T14:40) F=$(date -u -d "$F 10 minutes ago" +%Y-%m-%dT%H:%M);; esac
 echo "frame $F"
 ./fetch.sh "$F"
-python3 -W ignore reproject.py 4096
+FRAME=$F python3 -W ignore reproject.py 4096
 python3 -W ignore export.py "$D"
 FRAME=$F python3 -W ignore storms.py "$D"
 FRAME=$F python3 -W ignore visible.py "$D"
