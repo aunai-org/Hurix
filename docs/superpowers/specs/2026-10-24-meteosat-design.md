@@ -18,7 +18,7 @@ This change adds two Meteosat satellites so the whole ring is live:
 - The globe shows live cloud everywhere geostationary satellites see, with no archival band in the middle.
 - The replay, the HD tiles and the 24 h globe replay use Meteosat in that area too.
 - Official storms there get the same close-up, eye fix, path, loop and sliding replay as the others.
-- Meteosat-12 storms, and Indian Ocean storms west of about 65° E, also get true colour in daylight.
+- Meteosat-12 storms, and Indian Ocean storms west of about 65° E, also get true colour in daylight. Indian Ocean storms further east get Meteosat-9's natural colour, labelled as false colour.
 - The global cloud-top height map is filled across the middle, from Meteosat's height product.
 
 ## 2. Source and calibration
@@ -71,7 +71,9 @@ This change adds two Meteosat satellites so the whole ring is live:
 - **`visible.py`.** True colour comes from `mtg_fd:rgb_truecolour`, which is already an RGB image, so it needs no calibration.
   - Meteosat-12 storms get it.
   - So do Meteosat-9 storms that Meteosat-12 still sees at view cosine ≥ 0.3 (the western Indian Ocean, to about 65° E).
-  - Meteosat-9 has no true-colour layer of its own, so storms further east show infrared only, as Himawari storms do at night.
+  - Meteosat-9 has no true-colour layer of its own. Storms further east take its **natural colour** (`msg_iodc:rgb_natural`, a false-colour mix of 0.6, 0.8 and 1.6 µm: land green, sea black, ice clouds cyan, water clouds white), from the same files, loop frames and daylight fade as true colour.
+  - Those storms carry `"visKind": "natural"` in `meta.json` (absent means true colour).
+  - For such a storm the page labels the picture plainly: the Colours hint reads "Natural colour from Meteosat-9: a false-colour mix, land green and ice clouds cyan", and the storm card's source line says "natural colour".
 - **Cloud-top height.** `msg_fes:cth` and `msg_iodc:cth` (every 15 min) only come as a coloured picture, and the colour scale isn't published. Decoding it:
   - `python3 meteosat.py calibrate` also builds `cth` in `meteosat_cal.json`: a colour → height (km) table. It's made by matching `msg_fes:cth` against GOES-19 ACHA over 55–25° W, taking the median ACHA height per colour bucket (RGB quantised to 4 bits per channel, buckets with fewer than 50 samples dropped).
   - It also records the colours that mean "no cloud" or "no data".
@@ -92,7 +94,8 @@ This change adds two Meteosat satellites so the whole ring is live:
 - **Satellite line:** "LIVE IR · Himawari-9 · GOES-18 · GOES-19 · Meteosat-12 · Meteosat-9 © EUMETSAT".
 - **Legend:** the "archival clouds … Meteosat isn't in this feed yet" hint goes. Where coverage is still missing (the poles), the existing grey archival treatment explains itself.
 - **Storm card:** the source line names the Meteosat satellite and adds "© EUMETSAT".
-- The front end needs no logic changes: storms carry their own `satellite` and `loopTimes`, and the replay reads times from them.
+- **Natural colour:** a storm with `visKind: "natural"` shows the natural-colour hint and source wording from §3. `src/meta.ts` passes `visKind` through. This is the only front-end logic change.
+- The replay needs no changes: storms carry their own `satellite` and `loopTimes`, and the replay reads times from them.
 - **Docs:** `docs/spec.md` (sources table, §11 limits, the "Add Meteosat" note), the README data line and the limits paragraph.
 
 ## 5. Testing
@@ -115,6 +118,5 @@ This change adds two Meteosat satellites so the whole ring is live:
 ## 6. Not in this change
 
 - EUMETSAT Data Store (raw files): the later upgrade if the calibrated values ever fall short.
-- Meteosat-9 natural colour: it's false colour (green land, cyan ice clouds), and it would clash with the true colour everywhere else.
 - Rapid-scan Europe.
 - INSAT-3D and FY-4.
